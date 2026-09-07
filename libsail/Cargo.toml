@@ -1,15 +1,11 @@
 [package]
 name = "libsail"
 version = "0.1.0"
-edition = "2024"
-license = "BSD-3-Clause"
-authors = ["Jack Roddy <jack.w.roddy@gmail.com>"]
-repository = "https://github.com/TravisWheelerLab/sail"
 description = "sequence analysis I/O library"
-
-[lib]
-name = "libsail"
-path = "src/lib.rs"
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
 
 [features]
 mmap = ["dep:memmap2"]
