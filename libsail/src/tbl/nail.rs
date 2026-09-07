@@ -3,9 +3,9 @@
 use std::fmt::Display;
 use std::io::Write;
 
-use super::{Hit, HitColumns, WriteRow, fields_and_tail, number, row_text};
+use super::{Hit, HitColumns, WriteRow, number, split_columns};
 use crate::Record;
-use crate::error::{Result, bail_parse};
+use crate::error::Result;
 use crate::parse::Parse;
 
 /// ```text
@@ -23,7 +23,7 @@ impl HitColumns for NailTable {
     const T_END: Option<usize> = Some(3);
     const SCORE: usize = 6;
     const E_VALUE: usize = 8;
-    const N_FIELDS: usize = 10;
+    const N_COLUMNS: usize = 10;
 }
 
 // ---
@@ -83,29 +83,19 @@ impl Parse for NailRow {
 
     /// The inverse of [`NailRow::write_to`].
     fn parse(bytes: &[u8]) -> Result<Self> {
-        let text = row_text(bytes)?;
-
-        let (f, _) = fields_and_tail(text, NailTable::N_FIELDS);
-        if f.len() < NailTable::N_FIELDS {
-            bail_parse!(
-                "a nail row has {} columns, found {}: {:?}",
-                NailTable::N_FIELDS,
-                f.len(),
-                text.trim_end()
-            )
-        }
+        let (c, _) = split_columns(bytes, NailTable::N_COLUMNS, "a nail row")?;
 
         Ok(NailRow {
-            target: f[0].to_string(),
-            query: f[1].to_string(),
-            target_start: number(f[2], "target start")?,
-            target_end: number(f[3], "target end")?,
-            query_start: number(f[4], "query start")?,
-            query_end: number(f[5], "query end")?,
-            score: number(f[6], "score")?,
-            bias: number(f[7], "bias")?,
-            e_value: number(f[8], "evalue")?,
-            cell_fraction: number(f[9], "cell frac")?,
+            target: c[0].to_string(),
+            query: c[1].to_string(),
+            target_start: number(c[2], "target start")?,
+            target_end: number(c[3], "target end")?,
+            query_start: number(c[4], "query start")?,
+            query_end: number(c[5], "query end")?,
+            score: number(c[6], "score")?,
+            bias: number(c[7], "bias")?,
+            e_value: number(c[8], "evalue")?,
+            cell_fraction: number(c[9], "cell frac")?,
         })
     }
 }

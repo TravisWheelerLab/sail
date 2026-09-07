@@ -3,9 +3,9 @@
 use std::fmt::Display;
 use std::io::Write;
 
-use super::{Hit, HitColumns, WriteRow, fields_and_tail, number, row_text};
+use super::{Hit, HitColumns, WriteRow, number, split_columns};
 use crate::Record;
-use crate::error::{Result, bail_parse};
+use crate::error::Result;
 use crate::parse::Parse;
 
 /// `hmmsearch`/`hmmscan` `--tblout`: one row per sequence.
@@ -28,7 +28,7 @@ impl HitColumns for HmmerTable {
     const T_END: Option<usize> = None;
     const SCORE: usize = 5;
     const E_VALUE: usize = 4;
-    const N_FIELDS: usize = 18;
+    const N_COLUMNS: usize = 18;
 }
 
 /// `hmmsearch`/`hmmscan` `--domtblout`: one row per domain.
@@ -50,7 +50,7 @@ impl HitColumns for HmmerDomTable {
     const T_END: Option<usize> = Some(18);
     const SCORE: usize = 13;
     const E_VALUE: usize = 12;
-    const N_FIELDS: usize = 22;
+    const N_COLUMNS: usize = 22;
 }
 
 // ---
@@ -152,40 +152,27 @@ impl Parse for HmmerRow {
 
     /// The inverse of [`HmmerRow::write_to`].
     fn parse(bytes: &[u8]) -> Result<Self> {
-        let text = row_text(bytes)?;
-
-        // the tail is the description rather than something to
-        // discard: it is free text with spaces in it, so it
-        // survives only by being left unsplit
-        let (f, description) = fields_and_tail(text, HmmerTable::N_FIELDS);
-        if f.len() < HmmerTable::N_FIELDS {
-            bail_parse!(
-                "a hmmer --tblout row has {} columns, found {}: {:?}",
-                HmmerTable::N_FIELDS,
-                f.len(),
-                text.trim_end()
-            )
-        }
+        let (c, description) = split_columns(bytes, HmmerTable::N_COLUMNS, "a hmmer --tblout row")?;
 
         Ok(HmmerRow {
-            target: f[0].to_string(),
-            target_accession: reported(f[1]),
-            query: f[2].to_string(),
-            query_accession: reported(f[3]),
-            e_value: number(f[4], "E-value")?,
-            score: number(f[5], "score")?,
-            bias: number(f[6], "bias")?,
-            best_e_value: number(f[7], "best domain E-value")?,
-            best_score: number(f[8], "best domain score")?,
-            best_bias: number(f[9], "best domain bias")?,
-            exp: number(f[10], "exp")?,
-            reg: number(f[11], "reg")?,
-            clu: number(f[12], "clu")?,
-            ov: number(f[13], "ov")?,
-            env: number(f[14], "env")?,
-            dom: number(f[15], "dom")?,
-            rep: number(f[16], "rep")?,
-            inc: number(f[17], "inc")?,
+            target: c[0].to_string(),
+            target_accession: reported(c[1]),
+            query: c[2].to_string(),
+            query_accession: reported(c[3]),
+            e_value: number(c[4], "E-value")?,
+            score: number(c[5], "score")?,
+            bias: number(c[6], "bias")?,
+            best_e_value: number(c[7], "best domain E-value")?,
+            best_score: number(c[8], "best domain score")?,
+            best_bias: number(c[9], "best domain bias")?,
+            exp: number(c[10], "exp")?,
+            reg: number(c[11], "reg")?,
+            clu: number(c[12], "clu")?,
+            ov: number(c[13], "ov")?,
+            env: number(c[14], "env")?,
+            dom: number(c[15], "dom")?,
+            rep: number(c[16], "rep")?,
+            inc: number(c[17], "inc")?,
             description: reported(description),
         })
     }
@@ -302,41 +289,32 @@ impl Parse for HmmerDomRow {
 
     /// The inverse of [`HmmerDomRow::write_to`].
     fn parse(bytes: &[u8]) -> Result<Self> {
-        let text = row_text(bytes)?;
-
-        let (f, description) = fields_and_tail(text, HmmerDomTable::N_FIELDS);
-        if f.len() < HmmerDomTable::N_FIELDS {
-            bail_parse!(
-                "a hmmer --domtblout row has {} columns, found {}: {:?}",
-                HmmerDomTable::N_FIELDS,
-                f.len(),
-                text.trim_end()
-            )
-        }
+        let (c, description) =
+            split_columns(bytes, HmmerDomTable::N_COLUMNS, "a hmmer --domtblout row")?;
 
         Ok(HmmerDomRow {
-            target: f[0].to_string(),
-            target_accession: reported(f[1]),
-            target_len: number(f[2], "tlen")?,
-            query: f[3].to_string(),
-            query_accession: reported(f[4]),
-            query_len: number(f[5], "qlen")?,
-            e_value: number(f[6], "E-value")?,
-            score: number(f[7], "score")?,
-            bias: number(f[8], "bias")?,
-            domain_index: number(f[9], "domain number")?,
-            domain_count: number(f[10], "domain count")?,
-            c_e_value: number(f[11], "c-Evalue")?,
-            i_e_value: number(f[12], "i-Evalue")?,
-            domain_score: number(f[13], "domain score")?,
-            domain_bias: number(f[14], "domain bias")?,
-            hmm_from: number(f[15], "hmm from")?,
-            hmm_to: number(f[16], "hmm to")?,
-            ali_from: number(f[17], "ali from")?,
-            ali_to: number(f[18], "ali to")?,
-            env_from: number(f[19], "env from")?,
-            env_to: number(f[20], "env to")?,
-            accuracy: number(f[21], "acc")?,
+            target: c[0].to_string(),
+            target_accession: reported(c[1]),
+            target_len: number(c[2], "tlen")?,
+            query: c[3].to_string(),
+            query_accession: reported(c[4]),
+            query_len: number(c[5], "qlen")?,
+            e_value: number(c[6], "E-value")?,
+            score: number(c[7], "score")?,
+            bias: number(c[8], "bias")?,
+            domain_index: number(c[9], "domain number")?,
+            domain_count: number(c[10], "domain count")?,
+            c_e_value: number(c[11], "c-Evalue")?,
+            i_e_value: number(c[12], "i-Evalue")?,
+            domain_score: number(c[13], "domain score")?,
+            domain_bias: number(c[14], "domain bias")?,
+            hmm_from: number(c[15], "hmm from")?,
+            hmm_to: number(c[16], "hmm to")?,
+            ali_from: number(c[17], "ali from")?,
+            ali_to: number(c[18], "ali to")?,
+            env_from: number(c[19], "env from")?,
+            env_to: number(c[20], "env to")?,
+            accuracy: number(c[21], "acc")?,
             description: reported(description),
         })
     }

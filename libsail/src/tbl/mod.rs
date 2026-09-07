@@ -79,11 +79,11 @@ pub trait HitColumns {
     const T_END: Option<usize>;
     const SCORE: usize;
     const E_VALUE: usize;
-    /// Mandatory fields in a row.
+    /// Mandatory columns in a row.
     //
     // a row with fewer is an error rather than a panic, which
     // catches a table in the wrong format at its first row
-    const N_FIELDS: usize;
+    const N_COLUMNS: usize;
 }
 
 // ---
@@ -108,50 +108,40 @@ impl<C: HitColumns> Parse for HitParser<C> {
 
     /// The inverse of [`Hit::write_to`] for the same layout.
     fn parse(bytes: &[u8]) -> Result<Hit> {
-        let text = row_text(bytes)?;
-        let (fields, _) = fields_and_tail(text, C::N_FIELDS);
+        let (cols, _) = split_columns(bytes, C::N_COLUMNS, "a row of this layout")?;
 
-        // >= and not ==: HMMER's description is free text past
-        // the last column, and `-outfmt "6 std qlen slen"`
-        // appends columns after the standard twelve, which
-        // this reads correctly and == would reject
-        if fields.len() < C::N_FIELDS {
-            bail_parse!(
-                "a row of this layout has {} fields, found {}: {:?}",
-                C::N_FIELDS,
-                fields.len(),
-                text.trim_end()
-            )
-        }
-
-        let (query_start, query_end) = pair(&fields, C::Q_START, C::Q_END, "query")?;
-        let (target_start, target_end) = pair(&fields, C::T_START, C::T_END, "target")?;
+        let (query_start, query_end) = pair(&cols, C::Q_START, C::Q_END, "query")?;
+        let (target_start, target_end) = pair(&cols, C::T_START, C::T_END, "target")?;
 
         Ok(Hit {
-            query: field(&fields, C::QUERY, "query")?.to_string(),
-            target: field(&fields, C::TARGET, "target")?.to_string(),
+            query: column(&cols, C::QUERY, "query")?.to_string(),
+            target: column(&cols, C::TARGET, "target")?.to_string(),
             query_start,
             query_end,
             target_start,
             target_end,
-            score: number(field(&fields, C::SCORE, "score")?, "score")?,
-            e_value: number(field(&fields, C::E_VALUE, "e-value")?, "e-value")?,
+            score: number(column(&cols, C::SCORE, "score")?, "score")?,
+            e_value: number(column(&cols, C::E_VALUE, "e-value")?, "e-value")?,
         })
     }
 }
 
-/// A row's bytes as text.
-pub(crate) fn row_text(bytes: &[u8]) -> Result<&str> {
-    match std::str::from_utf8(bytes) {
-        Ok(text) => Ok(text),
-        Err(_) => bail_parse!("a row is utf-8 text"),
-    }
-}
+/// The first `n` columns of a row, plus the rest of the line unsplit — which
+/// is where HMMER writes its free-text description.
+///
+/// # Errors
+///
+/// A row of fewer than `n` columns, reported as `what`.
+pub(crate) fn split_columns<'a>(
+    bytes: &'a [u8],
+    n: usize,
+    what: &str,
+) -> Result<(Vec<&'a str>, &'a str)> {
+    let Ok(text) = std::str::from_utf8(bytes) else {
+        bail_parse!("a row is utf-8 text")
+    };
 
-/// The first `n` whitespace-separated fields of a row, plus the rest of the
-/// line unsplit — which is where HMMER writes its free-text description.
-pub(crate) fn fields_and_tail(text: &str, n: usize) -> (Vec<&str>, &str) {
-    let mut fields = Vec::with_capacity(n);
+    let mut cols = Vec::with_capacity(n);
     let mut rest = text.trim_end();
 
     for _ in 0..n {
@@ -165,19 +155,32 @@ pub(crate) fn fields_and_tail(text: &str, n: usize) -> (Vec<&str>, &str) {
             break;
         }
 
-        fields.push(&rest[..end]);
+        cols.push(&rest[..end]);
         rest = &rest[end..];
     }
 
-    (fields, rest.trim())
+    // narrower than the format is an error and wider is not:
+    // HMMER's description is free text past the last column,
+    // and `-outfmt "6 std qlen slen"` appends columns after
+    // the standard twelve. stopping the loop at n is what
+    // reads those by their first n columns
+    if cols.len() < n {
+        bail_parse!(
+            "{what} has {n} columns, found {}: {:?}",
+            cols.len(),
+            text.trim_end()
+        )
+    }
+
+    Ok((cols, rest.trim()))
 }
 
 /// Column `i`, or a failure naming the column rather than the index.
-fn field<'a>(fields: &[&'a str], i: usize, what: &str) -> Result<&'a str> {
-    match fields.get(i) {
-        Some(f) => Ok(*f),
+fn column<'a>(cols: &[&'a str], i: usize, what: &str) -> Result<&'a str> {
+    match cols.get(i) {
+        Some(c) => Ok(*c),
         // reachable only from a layout whose index is past
-        // its own N_FIELDS.
+        // its own N_COLUMNS.
         // every_layout_indexes_within_its_own_row rules that
         // out for the four here, not for a caller's
         None => bail_parse!("this layout puts {what} at column {i}, past the row"),
@@ -187,15 +190,15 @@ fn field<'a>(fields: &[&'a str], i: usize, what: &str) -> Result<&'a str> {
 /// Both coordinates of a span, or `(None, None)` where the layout reports
 /// neither.
 fn pair(
-    fields: &[&str],
+    cols: &[&str],
     start: Option<usize>,
     end: Option<usize>,
     what: &str,
 ) -> Result<(Option<usize>, Option<usize>)> {
     match (start, end) {
         (Some(s), Some(e)) => Ok((
-            Some(number(field(fields, s, what)?, what)?),
-            Some(number(field(fields, e, what)?, what)?),
+            Some(number(column(cols, s, what)?, what)?),
+            Some(number(column(cols, e, what)?, what)?),
         )),
         (None, None) => Ok((None, None)),
 
@@ -220,17 +223,17 @@ impl Hit {
     /// Write this hit as one row in `C`'s column order. Round-trips a [`Hit`],
     /// not a file: columns the layout has that a `Hit` lacks are written `-`.
     pub fn write_to<C: HitColumns, W: Write>(&self, mut w: W) -> Result<()> {
-        let mut fields = vec!["-".to_string(); C::N_FIELDS];
+        let mut cols = vec!["-".to_string(); C::N_COLUMNS];
 
         let mut set = |i: usize, value: String| -> Result<()> {
-            match fields.get_mut(i) {
-                Some(f) => {
-                    *f = value;
+            match cols.get_mut(i) {
+                Some(c) => {
+                    *c = value;
                     Ok(())
                 }
                 None => bail_parse!(
-                    "this layout puts a column at {i}, past its own {} fields",
-                    C::N_FIELDS
+                    "this layout puts a column at {i}, past its own {} columns",
+                    C::N_COLUMNS
                 ),
             }
         };
@@ -260,7 +263,7 @@ impl Hit {
             }
         }
 
-        writeln!(w, "{}", fields.join("\t"))?;
+        writeln!(w, "{}", cols.join("\t"))?;
 
         Ok(())
     }
@@ -530,23 +533,6 @@ mod tests {
     use crate::tbl::nail::{NailRow, NailTable};
 
     #[test]
-    fn a_backwards_pair_of_coordinates_is_a_minus_strand_match() {
-        // why the coordinates are bare and not a Range: BLAST
-        // and nhmmer report a minus-strand match with start
-        // above end, which a Range renders empty. it must
-        // survive a round trip in the order it arrived
-        let h = Hit {
-            target_start: Some(900),
-            target_end: Some(400),
-            ..hit("q", "t")
-        };
-        let back = HitParser::<BlastTable>::parse(&row_of::<BlastTable>(&h)).unwrap();
-
-        assert_eq!(back, h);
-        assert!(back.target_start > back.target_end, "still reversed");
-    }
-
-    #[test]
     fn hit_display_is_a_summary_and_says_so() {
         // pinned: Display is a summary line, not a rendering
         // of the record. unlike the seq types it drops the
@@ -569,7 +555,7 @@ mod tests {
     /// Every layout must index within the row width it declares, or a parser
     /// built on it reads the wrong column — or panics.
     fn layout_is_self_consistent<C: HitColumns>(what: &str) {
-        let n = C::N_FIELDS;
+        let n = C::N_COLUMNS;
         assert!(C::QUERY < n, "{what}: QUERY past the row");
         assert!(C::TARGET < n, "{what}: TARGET past the row");
         assert!(C::SCORE < n, "{what}: SCORE past the row");
@@ -609,8 +595,8 @@ mod tests {
     fn the_layouts_are_actually_different() {
         // if two of these agreed on every column,
         // one of them would be wrong
-        assert_ne!(BlastTable::N_FIELDS, HmmerTable::N_FIELDS);
-        assert_ne!(HmmerTable::N_FIELDS, HmmerDomTable::N_FIELDS);
+        assert_ne!(BlastTable::N_COLUMNS, HmmerTable::N_COLUMNS);
+        assert_ne!(HmmerTable::N_COLUMNS, HmmerDomTable::N_COLUMNS);
         assert_ne!(BlastTable::E_VALUE, HmmerTable::E_VALUE);
     }
 
@@ -638,6 +624,23 @@ mod tests {
         let mut out = Vec::new();
         h.write_to::<C, _>(&mut out).unwrap();
         out
+    }
+
+    #[test]
+    fn a_backwards_pair_of_coordinates_is_a_minus_strand_match() {
+        // why the coordinates are bare and not a Range: BLAST
+        // and nhmmer report a minus-strand match with start
+        // above end, which a Range renders empty. it must
+        // survive a round trip in the order it arrived
+        let h = Hit {
+            target_start: Some(900),
+            target_end: Some(400),
+            ..hit("q", "t")
+        };
+        let back = HitParser::<BlastTable>::parse(&row_of::<BlastTable>(&h)).unwrap();
+
+        assert_eq!(back, h);
+        assert!(back.target_start > back.target_end, "still reversed");
     }
 
     #[test]
@@ -708,12 +711,12 @@ mod tests {
         // a reproduction of a tool's output: BLAST's pident and
         // the rest are '-' because a Hit never held them
         let text = String::from_utf8(row_of::<BlastTable>(&hit("q", "t"))).unwrap();
-        let fields: Vec<&str> = text.trim_end().split('\t').collect();
+        let cols: Vec<&str> = text.trim_end().split('\t').collect();
 
-        assert_eq!(fields.len(), BlastTable::N_FIELDS);
-        assert_eq!(fields[BlastTable::QUERY], "q");
-        assert_eq!(fields[2], "-", "pident is not modelled");
-        assert_eq!(fields[3], "-", "length is not modelled");
+        assert_eq!(cols.len(), BlastTable::N_COLUMNS);
+        assert_eq!(cols[BlastTable::QUERY], "q");
+        assert_eq!(cols[2], "-", "pident is not modelled");
+        assert_eq!(cols[3], "-", "length is not modelled");
     }
 
     #[test]
@@ -741,13 +744,13 @@ mod tests {
 
     #[test]
     fn a_row_too_narrow_for_its_layout_says_so() {
-        // N_FIELDS catching a table in the wrong layout: a
-        // 10-field nail row read as a 12-field BLAST one
+        // N_COLUMNS catching a table in the wrong layout: a
+        // 10-column nail row read as a 12-column BLAST one
         let nail = row_of::<NailTable>(&hit("q", "t"));
         let err = HitParser::<BlastTable>::parse(&nail).unwrap_err();
 
         assert!(matches!(err.kind(), crate::ErrorKind::Parse { .. }));
-        assert!(err.to_string().contains("12 fields"), "{err}");
+        assert!(err.to_string().contains("12 columns"), "{err}");
         assert!(err.to_string().contains("found 10"), "{err}");
     }
 
@@ -1048,7 +1051,7 @@ mod tests {
     }
 
     #[test]
-    fn the_collections_read_a_full_row_type_on_both_backends() {
+    fn the_collections_read_a_full_row_type_on_every_backend() {
         // Table and IndexedTable are generic over the parser
         // and not over a hit layout, so the same pair has to
         // carry a format's own row type
@@ -1063,9 +1066,48 @@ mod tests {
 
         disk.validate().unwrap();
 
+        #[cfg(feature = "mmap")]
+        {
+            // SAFETY: a fixture is read-only test data, and
+            // nothing here writes to it while the map is alive
+            let mapped: IndexedTable<HmmerDomRow, MmapSource> =
+                unsafe { IndexedTable::map(path) }.unwrap();
+
+            assert_eq!(mapped.len(), mem.len());
+            for n in 0..mem.len() {
+                assert_eq!(mapped.cloned(n), mem.cloned(n), "row {n}");
+            }
+        }
+
         // and the combinators come with them
         let tandem = mem.filter(|r| r.domain_count == 2);
         assert_eq!(tandem.len(), 4, "two proteins with two domains each");
+    }
+
+    /// Every row of `path` written back and read again must be unchanged.
+    fn rows_survive_a_write<R>(path: &str)
+    where
+        R: Parse<Record = R> + WriteRow + PartialEq + std::fmt::Debug,
+    {
+        let rows: Table<R> = Table::open(path).unwrap();
+        assert!(!rows.is_empty(), "{path} has rows to write");
+
+        let mut out = Vec::new();
+        rows.write_to(&mut out).unwrap();
+
+        assert_eq!(Table::<R>::new(&out[..]).unwrap(), rows, "{path}");
+    }
+
+    #[test]
+    fn a_whole_table_of_full_rows_survives_its_own_writer() {
+        // every_fixture_row_survives_its_own_writer can only
+        // check the six values a Hit models, since the writer
+        // fills the rest with '-'. a row type holds every
+        // column, so here the whole file comes back
+        rows_survive_a_write::<BlastRow>(fixture!("hits.blast.tbl"));
+        rows_survive_a_write::<NailRow>(fixture!("hits.nail.tbl"));
+        rows_survive_a_write::<HmmerRow>(fixture!("hits.hmmer.tblout"));
+        rows_survive_a_write::<HmmerDomRow>(fixture!("hits.hmmer.domtblout"));
     }
 
     #[test]

@@ -3,9 +3,9 @@
 use std::fmt::Display;
 use std::io::Write;
 
-use super::{Hit, HitColumns, WriteRow, fields_and_tail, number, row_text};
+use super::{Hit, HitColumns, WriteRow, number, split_columns};
 use crate::Record;
-use crate::error::{Result, bail_parse};
+use crate::error::Result;
 use crate::parse::Parse;
 
 /// The default `-outfmt 6` / `-outfmt 7` column set, also what
@@ -29,7 +29,7 @@ impl HitColumns for BlastTable {
     const T_END: Option<usize> = Some(9);
     const SCORE: usize = 11;
     const E_VALUE: usize = 10;
-    const N_FIELDS: usize = 12;
+    const N_COLUMNS: usize = 12;
 }
 
 // ---
@@ -91,34 +91,21 @@ impl Parse for BlastRow {
 
     /// The inverse of [`BlastRow::write_to`].
     fn parse(bytes: &[u8]) -> Result<Self> {
-        let text = row_text(bytes)?;
-
-        // the tail is dropped, not rejected: `-outfmt "6 std
-        // qlen slen"` appends columns after the standard
-        // twelve, and the twelve in front are still these
-        let (f, _) = fields_and_tail(text, BlastTable::N_FIELDS);
-        if f.len() < BlastTable::N_FIELDS {
-            bail_parse!(
-                "a BLAST row has {} columns, found {}: {:?}",
-                BlastTable::N_FIELDS,
-                f.len(),
-                text.trim_end()
-            )
-        }
+        let (c, _) = split_columns(bytes, BlastTable::N_COLUMNS, "a BLAST row")?;
 
         Ok(BlastRow {
-            query: f[0].to_string(),
-            target: f[1].to_string(),
-            identity: number(f[2], "pident")?,
-            length: number(f[3], "length")?,
-            mismatches: number(f[4], "mismatch")?,
-            gap_opens: number(f[5], "gapopen")?,
-            query_start: number(f[6], "qstart")?,
-            query_end: number(f[7], "qend")?,
-            target_start: number(f[8], "sstart")?,
-            target_end: number(f[9], "send")?,
-            e_value: number(f[10], "evalue")?,
-            bit_score: number(f[11], "bitscore")?,
+            query: c[0].to_string(),
+            target: c[1].to_string(),
+            identity: number(c[2], "pident")?,
+            length: number(c[3], "length")?,
+            mismatches: number(c[4], "mismatch")?,
+            gap_opens: number(c[5], "gapopen")?,
+            query_start: number(c[6], "qstart")?,
+            query_end: number(c[7], "qend")?,
+            target_start: number(c[8], "sstart")?,
+            target_end: number(c[9], "send")?,
+            e_value: number(c[10], "evalue")?,
+            bit_score: number(c[11], "bitscore")?,
         })
     }
 }
