@@ -3,7 +3,13 @@
 //! Every tool here reports the same thing — one query matched one target, with
 //! a score, an E-value, and optionally where the match sat in each sequence.
 //! What differs is which column holds what, so a [`Hit`] is the shape and a
-//! [`HitColumns`] impl is one tool\'s layout of it.
+//! [`HitColumns`] impl is one tool's layout of it.
+//!
+//! That shape is the intersection of the formats. Everything a single tool
+//! reports past it — BLAST's `pident`, nail's `cellfrac`, HMMER's accessions,
+//! sequence lengths and description — lives in that format's own row type
+//! beside its layout: [`blast::BlastRow`], [`nail::NailRow`],
+//! [`hmmer::HmmerRow`], [`hmmer::HmmerDomRow`]. Each converts into a [`Hit`].
 
 use std::fmt::Display;
 use std::fs::File;
@@ -25,58 +31,34 @@ pub mod blast;
 pub mod hmmer;
 pub mod nail;
 
-/// A coordinate span as these formats write them: 1-based and inclusive on
-/// both ends.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct Span {
-    /// The first position covered.
-    pub start: usize,
-
-    /// The last position covered, which may be **below** [`start`](Self::start).
-    //
-    // why this is not a Range: ranges are half-open and
-    // imply start <= end, but BLAST and nhmmer report a
-    // minus-strand match with start > end, which a Range
-    // renders empty
-    pub end: usize,
-}
-
-#[allow(
-    clippy::len_without_is_empty,
-    reason = "a span always covers at least one position, so `is_empty` would \
-              be a method that only ever returns false"
-)]
-impl Span {
-    pub fn new(start: usize, end: usize) -> Self {
-        Span { start, end }
-    }
-
-    /// Number of positions covered, orientation ignored.
-    pub fn len(&self) -> usize {
-        self.start.abs_diff(self.end) + 1
-    }
-
-    /// Whether the span runs backwards, which these formats use to mean the
-    /// match is on the minus strand.
-    pub fn is_reverse(&self) -> bool {
-        self.start > self.end
-    }
-}
-
-impl Display for Span {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}-{}", self.start, self.end)
-    }
-}
-
+/// One tool's report that a query matched a target, holding what every layout
+/// modelled here has in common.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Hit {
     pub query: String,
     pub target: String,
-    /// Present when the layout reports query coordinates.
-    pub query_span: Option<Span>,
-    /// Present when the layout reports target coordinates.
-    pub target_span: Option<Span>,
+
+    /// The first query position covered, 1-based and inclusive, where the
+    /// layout reports coordinates.
+    //
+    // above the end coordinate on a minus-strand match, which
+    // is how BLAST and nhmmer spell one -- and the reason
+    // these are bare coordinates: a Range would render such a
+    // match empty
+    pub query_start: Option<usize>,
+
+    /// The last query position covered, which may be below
+    /// [`query_start`](Self::query_start).
+    pub query_end: Option<usize>,
+
+    /// The first target position covered, 1-based and inclusive, where the
+    /// layout reports coordinates.
+    pub target_start: Option<usize>,
+
+    /// The last target position covered, which may be below
+    /// [`target_start`](Self::target_start).
+    pub target_end: Option<usize>,
+
     pub score: f32,
     pub e_value: f64,
 }
@@ -126,14 +108,8 @@ impl<C: HitColumns> Parse for HitParser<C> {
 
     /// The inverse of [`Hit::write_to`] for the same layout.
     fn parse(bytes: &[u8]) -> Result<Hit> {
-        let Ok(text) = std::str::from_utf8(bytes) else {
-            bail_parse!("a row is utf-8 text")
-        };
-
-        // whitespace and not tabs: BLAST writes tabs, nail
-        // and HMMER write aligned runs of spaces, and none
-        // of them permit a space inside a modelled column
-        let fields: Vec<&str> = text.split_whitespace().collect();
+        let text = row_text(bytes)?;
+        let (fields, _) = fields_and_tail(text, C::N_FIELDS);
 
         // >= and not ==: HMMER's description is free text past
         // the last column, and `-outfmt "6 std qlen slen"`
@@ -148,15 +124,52 @@ impl<C: HitColumns> Parse for HitParser<C> {
             )
         }
 
+        let (query_start, query_end) = pair(&fields, C::Q_START, C::Q_END, "query")?;
+        let (target_start, target_end) = pair(&fields, C::T_START, C::T_END, "target")?;
+
         Ok(Hit {
             query: field(&fields, C::QUERY, "query")?.to_string(),
             target: field(&fields, C::TARGET, "target")?.to_string(),
-            query_span: span(&fields, C::Q_START, C::Q_END, "query")?,
-            target_span: span(&fields, C::T_START, C::T_END, "target")?,
+            query_start,
+            query_end,
+            target_start,
+            target_end,
             score: number(field(&fields, C::SCORE, "score")?, "score")?,
             e_value: number(field(&fields, C::E_VALUE, "e-value")?, "e-value")?,
         })
     }
+}
+
+/// A row's bytes as text.
+pub(crate) fn row_text(bytes: &[u8]) -> Result<&str> {
+    match std::str::from_utf8(bytes) {
+        Ok(text) => Ok(text),
+        Err(_) => bail_parse!("a row is utf-8 text"),
+    }
+}
+
+/// The first `n` whitespace-separated fields of a row, plus the rest of the
+/// line unsplit — which is where HMMER writes its free-text description.
+pub(crate) fn fields_and_tail(text: &str, n: usize) -> (Vec<&str>, &str) {
+    let mut fields = Vec::with_capacity(n);
+    let mut rest = text.trim_end();
+
+    for _ in 0..n {
+        rest = rest.trim_start();
+
+        // any whitespace and not tabs: BLAST writes tabs, nail
+        // and HMMER write aligned runs of spaces, and none of
+        // them permit a space inside a modelled column
+        let end = rest.find(char::is_whitespace).unwrap_or(rest.len());
+        if end == 0 {
+            break;
+        }
+
+        fields.push(&rest[..end]);
+        rest = &rest[end..];
+    }
+
+    (fields, rest.trim())
 }
 
 /// Column `i`, or a failure naming the column rather than the index.
@@ -171,19 +184,20 @@ fn field<'a>(fields: &[&'a str], i: usize, what: &str) -> Result<&'a str> {
     }
 }
 
-/// Both ends of a span, or `None` where the layout reports no coordinates.
-fn span(
+/// Both coordinates of a span, or `(None, None)` where the layout reports
+/// neither.
+fn pair(
     fields: &[&str],
     start: Option<usize>,
     end: Option<usize>,
     what: &str,
-) -> Result<Option<Span>> {
+) -> Result<(Option<usize>, Option<usize>)> {
     match (start, end) {
-        (Some(s), Some(e)) => Ok(Some(Span::new(
-            number(field(fields, s, what)?, what)?,
-            number(field(fields, e, what)?, what)?,
-        ))),
-        (None, None) => Ok(None),
+        (Some(s), Some(e)) => Ok((
+            Some(number(field(fields, s, what)?, what)?),
+            Some(number(field(fields, e, what)?, what)?),
+        )),
+        (None, None) => Ok((None, None)),
 
         // a layout naming one end and not the other would
         // otherwise drop the coordinate it does report
@@ -191,7 +205,7 @@ fn span(
     }
 }
 
-fn number<T>(value: &str, what: &str) -> Result<T>
+pub(crate) fn number<T>(value: &str, what: &str) -> Result<T>
 where
     T: std::str::FromStr,
     T::Err: Display,
@@ -231,17 +245,18 @@ impl Hit {
         set(C::SCORE, self.score.to_string())?;
         set(C::E_VALUE, format!("{:e}", self.e_value))?;
 
-        for (start, end, span) in [
-            (C::Q_START, C::Q_END, self.query_span),
-            (C::T_START, C::T_END, self.target_span),
+        for (column, coordinate) in [
+            (C::Q_START, self.query_start),
+            (C::Q_END, self.query_end),
+            (C::T_START, self.target_start),
+            (C::T_END, self.target_end),
         ] {
-            // a span is dropped where the layout has
-            // nowhere to put it -- HmmerTable reports no
-            // coordinates at all -- so a round trip through
-            // one needs a Hit that layout can hold
-            if let (Some(i), Some(j), Some(span)) = (start, end, span) {
-                set(i, span.start.to_string())?;
-                set(j, span.end.to_string())?;
+            // a coordinate is dropped where the layout has
+            // nowhere to put it -- HmmerTable reports none at
+            // all -- so a round trip through one needs a Hit
+            // that layout can hold
+            if let (Some(i), Some(c)) = (column, coordinate) {
+                set(i, c.to_string())?;
             }
         }
 
@@ -253,32 +268,67 @@ impl Hit {
 
 // ---
 
-/// Every row of a hit table, held in memory.
-pub struct Table<C: HitColumns> {
-    hits: Vec<Hit>,
-
-    // fn() -> C rather than C: the layout is a parsing
-    // decision and not something the collection owns, and
-    // this keeps the auto traits without asking C for them
-    layout: PhantomData<fn() -> C>,
+/// Rendering one row, the reverse of the format's [`Parse`] impl.
+pub trait WriteRow: Parse {
+    /// Write `record` as the row a parser of this format reads back.
+    //
+    // no receiver, and on the parser rather than on the
+    // record, because writing a Hit needs a layout and only
+    // the parser has one. that is also what keeps Table to a
+    // single write_to: an inherent block over
+    // Table<HitParser<C>> beside a generic one over Table<P>
+    // collides on the method name, where clauses or not
+    fn write_row<W: Write>(record: &Self::Record, w: W) -> Result<()>;
 }
 
-/// BLAST `-outfmt 6`, in memory.
-pub type BlastHits = Table<crate::tbl::blast::BlastTable>;
-/// nail, in memory.
-pub type NailHits = Table<crate::tbl::nail::NailTable>;
-/// HMMER `--tblout`, in memory.
-pub type HmmerHits = Table<crate::tbl::hmmer::HmmerTable>;
-/// HMMER `--domtblout`, in memory.
-pub type HmmerDomHits = Table<crate::tbl::hmmer::HmmerDomTable>;
+impl<C: HitColumns> WriteRow for HitParser<C> {
+    fn write_row<W: Write>(record: &Hit, w: W) -> Result<()> {
+        record.write_to::<C, _>(w)
+    }
+}
 
-impl<C: HitColumns> Table<C> {
+/// Every row of a hit table, held in memory.
+pub struct Table<P: Parse> {
+    /// The parsed rows, in file order.
+    //
+    // P::Record rather than Hit, so that one collection
+    // covers both readings of a table: the cross-format hit
+    // and the format's own row type. every format here is
+    // framed the same way -- one row per non-comment line --
+    // so the parser is all that varies
+    rows: Vec<P::Record>,
+
+    // fn() -> P rather than P: the format is a parsing
+    // decision and not something the collection owns, and
+    // this keeps the auto traits without asking P for them
+    format: PhantomData<fn() -> P>,
+}
+
+/// BLAST `-outfmt 6` rows as cross-format [`Hit`]s, in memory.
+pub type BlastHits = Table<HitParser<crate::tbl::blast::BlastTable>>;
+/// nail rows as cross-format [`Hit`]s, in memory.
+pub type NailHits = Table<HitParser<crate::tbl::nail::NailTable>>;
+/// HMMER `--tblout` rows as cross-format [`Hit`]s, in memory.
+pub type HmmerHits = Table<HitParser<crate::tbl::hmmer::HmmerTable>>;
+/// HMMER `--domtblout` rows as cross-format [`Hit`]s, in memory.
+pub type HmmerDomHits = Table<HitParser<crate::tbl::hmmer::HmmerDomTable>>;
+
+/// BLAST `-outfmt 6` rows with every column, in memory.
+pub type BlastRows = Table<crate::tbl::blast::BlastRow>;
+/// nail rows with every column, in memory.
+pub type NailRows = Table<crate::tbl::nail::NailRow>;
+/// HMMER `--tblout` rows with every column, in memory.
+pub type HmmerRows = Table<crate::tbl::hmmer::HmmerRow>;
+/// HMMER `--domtblout` rows with every column, in memory.
+pub type HmmerDomRows = Table<crate::tbl::hmmer::HmmerDomRow>;
+
+impl<P: Parse> Table<P> {
     /// Read and parse every row from `bytes`.
     pub fn new<R: Read>(mut bytes: R) -> Result<Self> {
         let mut all = Vec::new();
         bytes.read_to_end(&mut all)?;
 
-        let hits = line_index(&all[..], is_comment)?
+        let rows = line_index(&all[..], is_comment)?
             .iter()
             .enumerate()
             .map(|(i, o)| {
@@ -287,14 +337,14 @@ impl<C: HitColumns> Table<C> {
                 // which row failed matters as much as why: a
                 // table in the wrong layout fails at its first
                 // one, and the byte offset is how to find it
-                HitParser::<C>::parse(range)
+                P::parse(range)
                     .map_err(|e| Error::parse(format!("row {i} at byte {}: {e}", o.start)))
             })
             .collect::<Result<Vec<_>>>()?;
 
         Ok(Table {
-            hits,
-            layout: PhantomData,
+            rows,
+            format: PhantomData,
         })
     }
 
@@ -302,12 +352,14 @@ impl<C: HitColumns> Table<C> {
     pub fn open(path: impl AsRef<Path>) -> Result<Self> {
         Table::new(File::open(path)?)
     }
+}
 
-    /// Write every row in `C`'s column order. See [`Hit::write_to`] for what a
-    /// row can and cannot carry back.
+impl<P: WriteRow> Table<P> {
+    /// Write every row in this format's column order. See [`Hit::write_to`]
+    /// for what a row of cross-format hits can and cannot carry back.
     pub fn write_to<W: Write>(&self, mut w: W) -> Result<()> {
-        for hit in &self.hits {
-            hit.write_to::<C, _>(&mut w)?;
+        for row in &self.rows {
+            P::write_row(row, &mut w)?;
         }
 
         Ok(())
@@ -315,53 +367,59 @@ impl<C: HitColumns> Table<C> {
 }
 
 // written out rather than derived: a derive bounds every
-// type parameter, so it would demand a HitColumns impl be
-// Debug and Clone to describe a table never holding one
-impl<C: HitColumns> std::fmt::Debug for Table<C> {
+// type parameter, so it would demand a parser be Debug and
+// Clone to describe a table never holding one
+impl<P: Parse> std::fmt::Debug for Table<P>
+where
+    P::Record: std::fmt::Debug,
+{
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Table").field("hits", &self.hits).finish()
+        f.debug_struct("Table").field("rows", &self.rows).finish()
     }
 }
 
-impl<C: HitColumns> Clone for Table<C> {
+impl<P: Parse> Clone for Table<P> {
     fn clone(&self) -> Self {
         Table {
-            hits: self.hits.clone(),
-            layout: PhantomData,
+            rows: self.rows.clone(),
+            format: PhantomData,
         }
     }
 }
 
-impl<C: HitColumns> PartialEq for Table<C> {
+impl<P: Parse> PartialEq for Table<P>
+where
+    P::Record: PartialEq,
+{
     fn eq(&self, other: &Self) -> bool {
-        self.hits == other.hits
+        self.rows == other.rows
     }
 }
 
-impl<C: HitColumns> Default for Table<C> {
+impl<P: Parse> Default for Table<P> {
     fn default() -> Self {
         Table {
-            hits: Vec::new(),
-            layout: PhantomData,
+            rows: Vec::new(),
+            format: PhantomData,
         }
     }
 }
 
-impl<C: HitColumns> Indexable for Table<C> {
-    type Record = Hit;
+impl<P: Parse> Indexable for Table<P> {
+    type Record = P::Record;
 
-    // the hits are right here, so lend one
+    // the rows are right here, so lend one
     type Yield<'a>
-        = &'a Hit
+        = &'a P::Record
     where
         Self: 'a;
 
     fn len(&self) -> usize {
-        self.hits.len()
+        self.rows.len()
     }
 
-    fn get(&self, n: usize) -> Option<&Hit> {
-        self.hits.get(n)
+    fn get(&self, n: usize) -> Option<&P::Record> {
+        self.rows.get(n)
     }
 }
 
@@ -376,14 +434,14 @@ impl<C: HitColumns> Indexable for Table<C> {
 /// `None` from `get` as a broken contract. [`validate`](Self::validate) clears
 /// a file of unknown provenance up front.
 #[cfg(any(unix, windows))]
-pub struct IndexedTable<C: HitColumns, S: Source = FileSource> {
+pub struct IndexedTable<P: Parse, S: Source = FileSource> {
     source: S,
     offsets: Vec<Offset>,
-    layout: PhantomData<fn() -> C>,
+    format: PhantomData<fn() -> P>,
 }
 
 #[cfg(any(unix, windows))]
-impl<C: HitColumns> IndexedTable<C, FileSource> {
+impl<P: Parse> IndexedTable<P, FileSource> {
     /// Index the file at `path`, parsing none of it.
     pub fn open(path: impl AsRef<Path>) -> Result<Self> {
         let source = FileSource::open(path)?;
@@ -392,13 +450,13 @@ impl<C: HitColumns> IndexedTable<C, FileSource> {
         Ok(IndexedTable {
             source,
             offsets,
-            layout: PhantomData,
+            format: PhantomData,
         })
     }
 }
 
 #[cfg(feature = "mmap")]
-impl<C: HitColumns> IndexedTable<C, MmapSource> {
+impl<P: Parse> IndexedTable<P, MmapSource> {
     /// Map the file at `path` and index it, parsing none of it.
     ///
     /// # Safety
@@ -413,13 +471,13 @@ impl<C: HitColumns> IndexedTable<C, MmapSource> {
         Ok(IndexedTable {
             source,
             offsets,
-            layout: PhantomData,
+            format: PhantomData,
         })
     }
 }
 
 #[cfg(any(unix, windows))]
-impl<C: HitColumns, S: Source> IndexedTable<C, S> {
+impl<P: Parse, S: Source> IndexedTable<P, S> {
     /// Read every row, returning the first that fails and its index.
     pub fn validate(&self) -> Result<()> {
         for n in 0..self.len() {
@@ -432,25 +490,23 @@ impl<C: HitColumns, S: Source> IndexedTable<C, S> {
 
     /// The `n`th row, or `None` past the end, keeping the failure reason that
     /// [`Indexable::get`] has to throw away.
-    pub fn try_get(&self, n: usize) -> Result<Option<Hit>> {
+    pub fn try_get(&self, n: usize) -> Result<Option<P::Record>> {
         let Some(o) = self.offsets.get(n) else {
             return Ok(None);
         };
 
-        Ok(Some(HitParser::<C>::parse(
-            &self.source.range(o.start, o.n_bytes)?,
-        )?))
+        Ok(Some(P::parse(&self.source.range(o.start, o.n_bytes)?)?))
     }
 }
 
 #[cfg(any(unix, windows))]
-impl<C: HitColumns, S: Source> Indexable for IndexedTable<C, S> {
-    type Record = Hit;
+impl<P: Parse, S: Source> Indexable for IndexedTable<P, S> {
+    type Record = P::Record;
 
-    // nothing to lend: the hit is parsed inside the call and
+    // nothing to lend: the row is parsed inside the call and
     // did not exist before it
     type Yield<'a>
-        = Hit
+        = P::Record
     where
         Self: 'a;
 
@@ -460,7 +516,7 @@ impl<C: HitColumns, S: Source> Indexable for IndexedTable<C, S> {
 
     /// Reads and parses the row's bytes on every call. A failure comes back as
     /// `None`; [`try_get`](Self::try_get) keeps the reason.
-    fn get(&self, n: usize) -> Option<Hit> {
+    fn get(&self, n: usize) -> Option<P::Record> {
         self.try_get(n).ok().flatten()
     }
 }
@@ -469,26 +525,25 @@ impl<C: HitColumns, S: Source> Indexable for IndexedTable<C, S> {
 mod tests {
     use super::*;
     use crate::fixture;
-    use crate::tbl::blast::BlastTable;
-    use crate::tbl::hmmer::{HmmerDomTable, HmmerTable};
-    use crate::tbl::nail::NailTable;
+    use crate::tbl::blast::{BlastRow, BlastTable};
+    use crate::tbl::hmmer::{HmmerDomRow, HmmerDomTable, HmmerRow, HmmerTable};
+    use crate::tbl::nail::{NailRow, NailTable};
 
     #[test]
-    fn a_span_counts_both_endpoints() {
-        // 1-based and inclusive at both ends
-        assert_eq!(Span::new(1, 1).len(), 1);
-        assert_eq!(Span::new(10, 20).len(), 11);
-    }
+    fn a_backwards_pair_of_coordinates_is_a_minus_strand_match() {
+        // why the coordinates are bare and not a Range: BLAST
+        // and nhmmer report a minus-strand match with start
+        // above end, which a Range renders empty. it must
+        // survive a round trip in the order it arrived
+        let h = Hit {
+            target_start: Some(900),
+            target_end: Some(400),
+            ..hit("q", "t")
+        };
+        let back = HitParser::<BlastTable>::parse(&row_of::<BlastTable>(&h)).unwrap();
 
-    #[test]
-    fn a_backwards_span_is_a_minus_strand_match_not_an_empty_one() {
-        // why Span is not a Range: BLAST and nhmmer report a
-        // minus-strand match with start > end
-        let rev = Span::new(900, 400);
-        assert!(rev.is_reverse());
-        assert_eq!(rev.len(), 501, "orientation does not change the length");
-        assert_eq!(rev.len(), Span::new(400, 900).len());
-        assert!(!Span::new(400, 900).is_reverse());
+        assert_eq!(back, h);
+        assert!(back.target_start > back.target_end, "still reversed");
     }
 
     #[test]
@@ -499,8 +554,10 @@ mod tests {
         let hit = Hit {
             query: "q1".into(),
             target: "t1".into(),
-            query_span: Some(Span::new(1, 10)),
-            target_span: Some(Span::new(5, 14)),
+            query_start: Some(1),
+            query_end: Some(10),
+            target_start: Some(5),
+            target_end: Some(14),
             score: 12.5,
             e_value: 1e-9,
         };
@@ -568,8 +625,10 @@ mod tests {
         Hit {
             query: query.into(),
             target: target.into(),
-            query_span: Some(Span::new(12, 101)),
-            target_span: Some(Span::new(88, 21)),
+            query_start: Some(12),
+            query_end: Some(101),
+            target_start: Some(88),
+            target_end: Some(21),
             score: 68.4,
             e_value: 1.1e-12,
         }
@@ -595,8 +654,10 @@ mod tests {
                 ..hit("q", "t")
             },
             Hit {
-                query_span: Some(Span::new(1, 1)),
-                target_span: Some(Span::new(9999, 1)),
+                query_start: Some(1),
+                query_end: Some(1),
+                target_start: Some(9999),
+                target_end: Some(1),
                 ..hit("long-name_with.punct", "t|2")
             },
         ] {
@@ -623,8 +684,10 @@ mod tests {
         // documented loss for the ones it cannot
         let spanned = hit("q", "t");
         let flat = Hit {
-            query_span: None,
-            target_span: None,
+            query_start: None,
+            query_end: None,
+            target_start: None,
+            target_end: None,
             ..spanned.clone()
         };
 
@@ -736,7 +799,8 @@ mod tests {
         assert!(!t.is_empty());
         assert_eq!(queries(&t), ["q1", "q2"]);
         assert!(t.get(2).is_none(), "past the end is None, not a panic");
-        assert_eq!(t.get(1).unwrap().target_span, Some(Span::new(30, 11)));
+        assert_eq!(t.get(1).unwrap().target_start, Some(30));
+        assert_eq!(t.get(1).unwrap().target_end, Some(11));
     }
 
     #[test]
@@ -795,7 +859,7 @@ mod tests {
         // backends; this is what checks it beyond the types
         let path = temp_tbl("agree", ROWS);
         let mem = two();
-        let disk: IndexedTable<BlastTable> = IndexedTable::open(&path).unwrap();
+        let disk: IndexedTable<HitParser<BlastTable>> = IndexedTable::open(&path).unwrap();
 
         assert_eq!(disk.len(), mem.len());
         for n in 0..mem.len() {
@@ -817,7 +881,7 @@ mod tests {
         let mem = two();
         // SAFETY: this test owns the file and does not touch
         // it while the map is alive
-        let mapped: IndexedTable<BlastTable, MmapSource> =
+        let mapped: IndexedTable<HitParser<BlastTable>, MmapSource> =
             unsafe { IndexedTable::map(&path) }.unwrap();
 
         assert_eq!(mapped.len(), mem.len());
@@ -835,7 +899,7 @@ mod tests {
         bytes.extend_from_slice(b"q3\tt3\n");
 
         let path = temp_tbl("bad", &bytes);
-        let disk: IndexedTable<BlastTable> = IndexedTable::open(&path).unwrap();
+        let disk: IndexedTable<HitParser<BlastTable>> = IndexedTable::open(&path).unwrap();
 
         assert_eq!(disk.len(), 3);
         assert!(disk.get(0).is_some());
@@ -901,11 +965,15 @@ mod tests {
 
         // every hit runs forward: these are protein searches,
         // so no span is reversed the way a nucleotide one can be
-        assert!(blast.iter().all(|h| !h.target_span.unwrap().is_reverse()));
+        assert!(
+            blast
+                .iter()
+                .all(|h| h.target_start.unwrap() < h.target_end.unwrap())
+        );
 
         // HmmerTable reports no coordinates, and the free-text
         // description past the last column is not a field
-        assert!(tblout.iter().all(|h| h.query_span.is_none()));
+        assert!(tblout.iter().all(|h| h.query_start.is_none()));
         assert_eq!(tblout.get(0).unwrap().query, "SH3_1");
         assert_eq!(tblout.get(0).unwrap().target, "SEM5_CAEEL");
     }
@@ -929,10 +997,75 @@ mod tests {
         assert_eq!(a.len(), b.len());
         for (x, y) in a.iter().zip(&b) {
             assert_eq!((&x.query, &x.target), (&y.query, &y.target));
-            assert_eq!(x.query_span, y.query_span, "{}/{}", x.query, x.target);
-            assert_eq!(x.target_span, y.target_span, "{}/{}", x.query, x.target);
+            assert_eq!(
+                (x.query_start, x.query_end),
+                (y.query_start, y.query_end),
+                "{}/{}",
+                x.query,
+                x.target
+            );
+            assert_eq!(
+                (x.target_start, x.target_end),
+                (y.target_start, y.target_end),
+                "{}/{}",
+                x.query,
+                x.target
+            );
             assert_eq!(x.score, y.score, "{}/{}", x.query, x.target);
         }
+    }
+
+    /// Every row of `path`, read through the format's own row type and through
+    /// its [`HitColumns`] layout, must describe the same hit.
+    fn rows_agree<R, C>(path: &str)
+    where
+        R: Parse<Record = R>,
+        C: HitColumns,
+        for<'a> &'a R: Into<Hit>,
+    {
+        let rows: Table<R> = Table::open(path).unwrap();
+        let hits: Table<HitParser<C>> = Table::open(path).unwrap();
+
+        assert!(!rows.is_empty(), "{path} has rows to compare");
+        assert_eq!(rows.len(), hits.len(), "{path}");
+
+        for n in 0..rows.len() {
+            let converted: Hit = rows.get(n).unwrap().into();
+            assert_eq!(&converted, hits.get(n).unwrap(), "row {n} of {path}");
+        }
+    }
+
+    #[test]
+    fn the_full_row_and_the_generic_hit_agree_on_every_fixture_row() {
+        // a format's row type and its HitColumns layout are two
+        // independent readings of the same file. over real tool
+        // output, agreement is what catches a column either one
+        // has transposed, and nothing else here does
+        rows_agree::<BlastRow, BlastTable>(fixture!("hits.blast.tbl"));
+        rows_agree::<NailRow, NailTable>(fixture!("hits.nail.tbl"));
+        rows_agree::<HmmerRow, HmmerTable>(fixture!("hits.hmmer.tblout"));
+        rows_agree::<HmmerDomRow, HmmerDomTable>(fixture!("hits.hmmer.domtblout"));
+    }
+
+    #[test]
+    fn the_collections_read_a_full_row_type_on_both_backends() {
+        // Table and IndexedTable are generic over the parser
+        // and not over a hit layout, so the same pair has to
+        // carry a format's own row type
+        let path = fixture!("hits.hmmer.domtblout");
+        let mem = HmmerDomRows::open(path).unwrap();
+        let disk: IndexedTable<HmmerDomRow> = IndexedTable::open(path).unwrap();
+
+        assert_eq!(disk.len(), mem.len());
+        for n in 0..mem.len() {
+            assert_eq!(disk.cloned(n), mem.cloned(n), "row {n}");
+        }
+
+        disk.validate().unwrap();
+
+        // and the combinators come with them
+        let tandem = mem.filter(|r| r.domain_count == 2);
+        assert_eq!(tandem.len(), 4, "two proteins with two domains each");
     }
 
     #[test]
