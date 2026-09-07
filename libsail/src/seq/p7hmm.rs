@@ -1234,13 +1234,8 @@ mod tests {
 
     #[test]
     fn every_profile_in_the_real_fixture_parses() {
-        // fixtures/ is gitignored, so a fresh clone
-        // has nothing to read here
         let path = fixture!("models.hmm");
-        let Ok(hmm) = Hmm::open(path) else {
-            eprintln!("skipping: {path} not present");
-            return;
-        };
+        let hmm = Hmm::open(path).expect(path);
 
         // the two profiles hmmbuild makes from families.sto
         assert_eq!(hmm.len(), 2);
@@ -1356,10 +1351,10 @@ mod tests {
     #[test]
     fn the_two_backends_agree_on_the_real_fixture() {
         let path = fixture!("models.hmm");
-        let (Ok(mem), Ok(disk)) = (Hmm::open(path), IndexedHmm::open(path)) else {
-            eprintln!("skipping: {path} not present");
-            return;
-        };
+        let (mem, disk) = (
+            Hmm::open(path).expect(path),
+            IndexedHmm::open(path).expect(path),
+        );
 
         assert_eq!(disk.len(), mem.len());
         for n in 0..mem.len() {

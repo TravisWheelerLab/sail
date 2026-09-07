@@ -509,13 +509,8 @@ mod tests {
     fn every_record_in_the_real_fixture_parses() {
         use crate::index::build_index;
 
-        // fixtures/ is gitignored, so a fresh clone
-        // has nothing to read here
         let path = fixture!("proteins.fa");
-        let Ok(bytes) = std::fs::read(path) else {
-            eprintln!("skipping {path}: not present");
-            return;
-        };
+        let bytes = std::fs::read(path).expect(path);
 
         let offsets = build_index::<_, FastaDelimiter>(&bytes[..]).unwrap();
         let records = offsets
@@ -635,12 +630,7 @@ mod tests {
 
     #[test]
     fn opening_the_real_fixture_gives_the_records_it_documents() {
-        // fixtures/ is gitignored, so a fresh clone
-        // has nothing to read here
-        let Ok(fa) = Fasta::open(fixture!("proteins.fa")) else {
-            eprintln!("skipping: fixtures/proteins.fa not present");
-            return;
-        };
+        let fa = Fasta::open(fixture!("proteins.fa")).unwrap();
 
         assert_eq!(fa.len(), 5);
         assert_eq!(fa.iter().map(|r| r.len()).sum::<usize>(), 2335);
@@ -688,14 +678,11 @@ mod tests {
         use crate::collection::Aggregate;
 
         let paths = [fixture!("proteins.fa"), fixture!("proteins_extra.fa")];
-        let Ok(disk) = paths
+        let disk = paths
             .iter()
             .map(IndexedFasta::open)
             .collect::<Result<Aggregate<_>>>()
-        else {
-            eprintln!("skipping: fixtures/ not present");
-            return;
-        };
+            .unwrap();
 
         assert_eq!(disk.len(), 7);
         assert_eq!(names(&disk).len(), 7);
@@ -729,10 +716,10 @@ mod tests {
     #[test]
     fn the_two_backends_agree_on_the_real_fixture() {
         let path = fixture!("proteins.fa");
-        let (Ok(mem), Ok(disk)) = (Fasta::open(path), IndexedFasta::open(path)) else {
-            eprintln!("skipping: {path} not present");
-            return;
-        };
+        let (mem, disk) = (
+            Fasta::open(path).expect(path),
+            IndexedFasta::open(path).expect(path),
+        );
 
         assert_eq!(disk.len(), mem.len());
         for n in 0..mem.len() {

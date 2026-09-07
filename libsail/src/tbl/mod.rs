@@ -853,10 +853,7 @@ mod tests {
     fn domain_rows_group_by_the_pair_they_describe() {
         // the domain table holds 7 rows over 5 query-target
         // pairs, so grouping has something to group
-        let Ok(dom) = HmmerDomHits::open(fixture!("hits.hmmer.domtblout")) else {
-            eprintln!("skipping: fixtures/ not present");
-            return;
-        };
+        let dom = HmmerDomHits::open(fixture!("hits.hmmer.domtblout")).unwrap();
 
         let groups = dom.group_by(|h| (h.query.clone(), h.target.clone()));
 
@@ -887,13 +884,8 @@ mod tests {
     }
 
     #[test]
-    fn the_real_fixtures_parse_to_what_their_readme_documents() {
-        // fixtures/ is gitignored, so a fresh clone
-        // has nothing to read here
-        let Ok(blast) = BlastHits::open(fixture!("hits.blast.tbl")) else {
-            eprintln!("skipping: fixtures/ not present");
-            return;
-        };
+    fn the_real_fixtures_parse_to_the_counts_they_hold() {
+        let blast = BlastHits::open(fixture!("hits.blast.tbl")).unwrap();
         let nail = NailHits::open(fixture!("hits.nail.tbl")).unwrap();
         let tblout = HmmerHits::open(fixture!("hits.hmmer.tblout")).unwrap();
         let dom = HmmerDomHits::open(fixture!("hits.hmmer.domtblout")).unwrap();
@@ -923,13 +915,10 @@ mod tests {
         // the strongest check the fixtures allow: two layouts
         // over one set of hits must agree once parsed, which no
         // single-format test can catch a transposed column with
-        let (Ok(blast), Ok(nail)) = (
-            BlastHits::open(fixture!("hits.blast.tbl")),
-            NailHits::open(fixture!("hits.nail.tbl")),
-        ) else {
-            eprintln!("skipping: fixtures/ not present");
-            return;
-        };
+        let (blast, nail) = (
+            BlastHits::open(fixture!("hits.blast.tbl")).unwrap(),
+            NailHits::open(fixture!("hits.nail.tbl")).unwrap(),
+        );
 
         let key = |h: &Hit| (h.query.clone(), h.target.clone());
         let mut a: Vec<Hit> = blast.iter().cloned().collect();
@@ -948,10 +937,7 @@ mod tests {
 
     #[test]
     fn every_fixture_row_survives_its_own_writer() {
-        let Ok(blast) = BlastHits::open(fixture!("hits.blast.tbl")) else {
-            eprintln!("skipping: fixtures/ not present");
-            return;
-        };
+        let blast = BlastHits::open(fixture!("hits.blast.tbl")).unwrap();
 
         for (name, bytes) in [
             ("blast", {

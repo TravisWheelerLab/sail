@@ -853,13 +853,8 @@ seq9     GGGG
 
     #[test]
     fn every_alignment_in_the_real_fixture_parses() {
-        // fixtures/ is gitignored, so a fresh clone
-        // has nothing to read here
         let path = fixture!("families.sto");
-        let Ok(sto) = Stockholm::open(path) else {
-            eprintln!("skipping: {path} not present");
-            return;
-        };
+        let sto = Stockholm::open(path).expect(path);
 
         // the Pfam SEEDs for SH3_1 and PDZ, six sequences
         // kept from each by fixtures/make.sh
@@ -978,10 +973,10 @@ seq9     GGGG
     #[test]
     fn the_two_backends_agree_on_the_real_fixture() {
         let path = fixture!("families.sto");
-        let (Ok(mem), Ok(disk)) = (Stockholm::open(path), IndexedStockholm::open(path)) else {
-            eprintln!("skipping: {path} not present");
-            return;
-        };
+        let (mem, disk) = (
+            Stockholm::open(path).expect(path),
+            IndexedStockholm::open(path).expect(path),
+        );
 
         assert_eq!(disk.len(), mem.len());
         for n in 0..mem.len() {
