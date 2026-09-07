@@ -1,3 +1,6 @@
-# sail
+# sail workspace
 
-sail is a rust library of parsers for some Bioinformatics sequence data formats.
+## about
+
+This is a cargo workspace for sail & libsail.
+
