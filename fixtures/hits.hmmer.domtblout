@@ -1,0 +1,20 @@
+#                                                                            --- full sequence --- -------------- this domain -------------   hmm coord   ali coord   env coord
+# target name        accession   tlen query name           accession   qlen   E-value  score  bias   #  of  c-Evalue  i-Evalue  score  bias  from    to  from    to  from    to  acc description of target
+#------------------- ---------- ----- -------------------- ---------- ----- --------- ------ ----- --- --- --------- --------- ------ ----- ----- ----- ----- ----- ----- ----- ---- ---------------------
+SEM5_CAEEL           -            228 SH3_1                PF00018.35    46   1.5e-34  105.8   1.1   1   2   1.5e-12   2.5e-12   34.7   0.0     2    46     5    50     4    50 0.96 Sex muscle abnormal protein 5
+SEM5_CAEEL           -            228 SH3_1                PF00018.35    46   1.5e-34  105.8   1.1   2   2   6.6e-23   1.1e-22   67.8   0.1     1    46   160   205   160   205 0.98 Sex muscle abnormal protein 5
+NCF2_HUMAN           -            526 SH3_1                PF00018.35    46   8.7e-22   65.0   0.1   1   1   5.4e-17   8.9e-17   48.9   0.0     2    45   464   507   463   508 0.98 Neutrophil cytosol factor 2
+DLG4_HUMAN           -            724 SH3_1                PF00018.35    46   2.2e-09   25.2   0.2   1   1   6.5e-09   1.1e-08   23.0   0.1     2    36   435   474   434   490 0.72 Disks large homolog 4
+DLG4_HUMAN           -            724 PDZ                  PF00595.30    81   3.5e-23   70.4   1.2   1   1   3.8e-10   9.5e-10   27.3   0.0    11    76   322   386   316   389 0.88 Disks large homolog 4
+NHRF1_HUMAN          -            358 PDZ                  PF00595.30    81   1.3e-17   52.5   0.0   1   2   2.1e-09   5.3e-09   24.9   0.0    11    80    23    90    19    91 0.89 Na(+)/H(+) exchange regulatory cofactor NHE-RF1
+NHRF1_HUMAN          -            358 PDZ                  PF00595.30    81   1.3e-17   52.5   0.0   2   2   1.7e-09   4.1e-09   25.3   0.0    10    70   162   221   157   231 0.90 Na(+)/H(+) exchange regulatory cofactor NHE-RF1
+#
+# Program:         hmmsearch
+# Version:         3.4 (Aug 2023)
+# Pipeline mode:   SEARCH
+# Query file:      models.hmm
+# Target file:     proteins.fa
+# Option settings: hmmsearch --tblout hits.hmmer.tblout --domtblout hits.hmmer.domtblout --cut_ga models.hmm proteins.fa 
+# Current dir:     fixtures
+# Date:            (normalized by make.sh)
+# [ok]

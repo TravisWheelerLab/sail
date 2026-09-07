@@ -1,0 +1,7 @@
+#              target target query query       comp        cell 
+# target query start  end    start end   score bias evalue frac 
+# ------ ----- ------ ------ ----- ----- ----- ---- ------ ---- 
+SEM5_CAEEL SH3_1 160    205    1     46    69.0  0.1  4.7e-23 0.073
+NCF2_HUMAN SH3_1 464    507    2     45    50.3  0.0  3.4e-17 0.035
+DLG4_HUMAN SH3_1 435    474    2     36    24.4  0.1  4.2e-9 0.034
+DLG4_HUMAN PDZ   322    386    11    76    28.9  0.0  3.1e-10 0.059

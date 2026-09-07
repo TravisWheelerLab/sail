@@ -1,0 +1,13 @@
+[package]
+name = "sail"
+version = "0.1.1"
+edition = "2024"
+license = "BSD-3-Clause"
+authors = ["Jack Roddy <jack.w.roddy@gmail.com>"]
+repository = "https://github.com/TravisWheelerLab/sail"
+description = "sequence analysis I/O tool"
+
+[dependencies]
+libsail = { path = "../libsail", version = "0.1.0" }
+anyhow = "1.0.99"
+clap = "4.6.6"

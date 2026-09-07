@@ -1,0 +1,8 @@
+#                                  gap                                          
+#                         mismatch open  query query target target              
+# query target pid length count    count start end   start  end    evalue score 
+# ----- ------ --- ------ -------- ----- ----- ----- ------ ------ ------ ----- 
+SH3_1   SEM5_CAEEL 54.348 46     21       0     1     46    160    205    4.7e-23 69.0 
+SH3_1   NCF2_HUMAN 52.273 44     21       0     2     45    464    507    3.4e-17 50.3 
+SH3_1   DLG4_HUMAN 42.500 40     18       1     2     36    435    474    4.2e-9 24.4 
+PDZ     DLG4_HUMAN 30.303 66     45       1     11    76    322    386    3.1e-10 28.9 
