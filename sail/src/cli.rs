@@ -2,6 +2,7 @@ use anyhow::Result;
 use clap::{Parser, Subcommand, ValueEnum};
 use libsail::format::Format;
 
+use crate::commands::count::CountArgs;
 use crate::commands::index::IndexArgs;
 
 #[derive(Parser)]
@@ -14,6 +15,7 @@ pub struct Cli {
 impl Cli {
     pub fn run(self) -> Result<()> {
         match self.command {
+            Command::Count(args) => args.run(),
             Command::Index(args) => args.run(),
         }
     }
@@ -21,6 +23,9 @@ impl Cli {
 
 #[derive(Subcommand)]
 enum Command {
+    /// Count the records in a file
+    Count(CountArgs),
+
     /// Write a record index beside a file
     Index(IndexArgs),
 }

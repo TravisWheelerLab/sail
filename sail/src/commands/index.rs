@@ -1,14 +1,15 @@
 use std::path::PathBuf;
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Result, bail};
 use clap::Args;
-use libsail::format::{self, Format};
+use libsail::format::Format;
 use libsail::index::Index;
 use libsail::seq::fasta::IndexedFasta;
 use libsail::seq::p7hmm::IndexedHmm;
 use libsail::seq::stockholm::IndexedStockholm;
 
 use crate::cli::FormatArg;
+use crate::input::format_of_path;
 
 #[derive(Args)]
 pub struct IndexArgs {
@@ -35,17 +36,7 @@ impl IndexArgs {
             );
         }
 
-        let found = format::detect_path(&self.input)
-            .with_context(|| format!("identifying {}", self.input.display()))?;
-
-        if let Some(asserted) = self.format.map(Format::from)
-            && asserted != found
-        {
-            bail!(
-                "--format {asserted} was given, but {} reads as {found}",
-                self.input.display()
-            );
-        }
+        let found = format_of_path(&self.input, self.format)?;
 
         let output = self
             .output

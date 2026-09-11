@@ -4,6 +4,7 @@ use clap::Parser;
 
 mod cli;
 mod commands;
+mod input;
 
 fn main() -> ExitCode {
     if let Err(e) = cli::Cli::parse().run() {
