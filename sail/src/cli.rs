@@ -13,6 +13,7 @@ use crate::commands::head::HeadArgs;
 use crate::commands::index::IndexArgs;
 use crate::commands::names::NamesArgs;
 use crate::commands::reformat::ReformatArgs;
+use crate::commands::rename::RenameArgs;
 use crate::commands::sample::SampleArgs;
 use crate::commands::shuffle::ShuffleArgs;
 use crate::commands::sort::SortArgs;
@@ -42,6 +43,7 @@ impl Cli {
             Command::Index(args) => args.run(),
             Command::Names(args) => args.run(),
             Command::Reformat(args) => args.run(),
+            Command::Rename(args) => args.run(),
             Command::Sample(args) => args.run(),
             Command::Shuffle(args) => args.run(),
             Command::Sort(args) => args.run(),
@@ -87,6 +89,9 @@ enum Command {
 
     /// Re-emit every record through this crate's writer
     Reformat(ReformatArgs),
+
+    /// Rewrite every record name
+    Rename(RenameArgs),
 
     /// Draw records at random
     Sample(SampleArgs),

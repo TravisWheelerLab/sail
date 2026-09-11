@@ -9,6 +9,7 @@ pub mod head;
 pub mod index;
 pub mod names;
 pub mod reformat;
+pub mod rename;
 pub mod sample;
 pub mod shuffle;
 pub mod sort;
