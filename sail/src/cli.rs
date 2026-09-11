@@ -2,6 +2,7 @@ use anyhow::Result;
 use clap::{Parser, Subcommand, ValueEnum};
 use libsail::format::Format;
 
+use crate::commands::cat::CatArgs;
 use crate::commands::count::CountArgs;
 use crate::commands::dedup::DedupArgs;
 use crate::commands::fetch::FetchArgs;
@@ -11,6 +12,11 @@ use crate::commands::grep::GrepArgs;
 use crate::commands::head::HeadArgs;
 use crate::commands::index::IndexArgs;
 use crate::commands::names::NamesArgs;
+use crate::commands::reformat::ReformatArgs;
+use crate::commands::sample::SampleArgs;
+use crate::commands::shuffle::ShuffleArgs;
+use crate::commands::sort::SortArgs;
+use crate::commands::split::SplitArgs;
 use crate::commands::stats::StatsArgs;
 use crate::commands::tail::TailArgs;
 use crate::commands::validate::ValidateArgs;
@@ -25,6 +31,7 @@ pub struct Cli {
 impl Cli {
     pub fn run(self) -> Result<()> {
         match self.command {
+            Command::Cat(args) => args.run(),
             Command::Count(args) => args.run(),
             Command::Dedup(args) => args.run(),
             Command::Fetch(args) => args.run(),
@@ -34,6 +41,11 @@ impl Cli {
             Command::Head(args) => args.run(),
             Command::Index(args) => args.run(),
             Command::Names(args) => args.run(),
+            Command::Reformat(args) => args.run(),
+            Command::Sample(args) => args.run(),
+            Command::Shuffle(args) => args.run(),
+            Command::Sort(args) => args.run(),
+            Command::Split(args) => args.run(),
             Command::Stats(args) => args.run(),
             Command::Tail(args) => args.run(),
             Command::Validate(args) => args.run(),
@@ -43,6 +55,9 @@ impl Cli {
 
 #[derive(Subcommand)]
 enum Command {
+    /// Concatenate several files into one stream
+    Cat(CatArgs),
+
     /// Count the records in a file
     Count(CountArgs),
 
@@ -69,6 +84,21 @@ enum Command {
 
     /// Print every record's name, one per line
     Names(NamesArgs),
+
+    /// Re-emit every record through this crate's writer
+    Reformat(ReformatArgs),
+
+    /// Draw records at random
+    Sample(SampleArgs),
+
+    /// Put the records in a random order
+    Shuffle(ShuffleArgs),
+
+    /// Order records by name or by size
+    Sort(SortArgs),
+
+    /// Write the records out across several files
+    Split(SplitArgs),
 
     /// Report the record count and the distribution of their sizes
     Stats(StatsArgs),

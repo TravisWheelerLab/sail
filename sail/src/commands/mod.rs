@@ -1,3 +1,4 @@
+pub mod cat;
 pub mod count;
 pub mod dedup;
 pub mod fetch;
@@ -7,6 +8,11 @@ pub mod grep;
 pub mod head;
 pub mod index;
 pub mod names;
+pub mod reformat;
+pub mod sample;
+pub mod shuffle;
+pub mod sort;
+pub mod split;
 pub mod stats;
 pub mod tail;
 pub mod validate;
