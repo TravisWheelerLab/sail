@@ -4,7 +4,7 @@
 //! and every one is buffered whole: the in-memory collections read to end
 //! anyway, and a pipe cannot be identified without reading its head.
 
-use std::io::Read;
+use std::io::{IsTerminal, Read};
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
@@ -110,8 +110,26 @@ fn assert_format(found: Format, asserted: Option<FormatArg>, what: &str) -> Resu
     Ok(())
 }
 
+/// Refuse stdin at a terminal, where the read would block with no sign of why.
+//
+// fifteen of the nineteen operations default their input to
+// `-`, so a bare `sail count` at a prompt would otherwise
+// sit on a read the caller never meant to start. taken as a
+// bool rather than read here, so the decision is reachable
+// from a test -- nothing can make a test binary's stdin a
+// terminal
+fn usable_stdin(is_terminal: bool) -> Result<()> {
+    if is_terminal {
+        bail!("no input: give a path, or pipe something in")
+    }
+
+    Ok(())
+}
+
 fn read_one(path: &Path) -> Result<Input> {
     if path.as_os_str() == "-" {
+        usable_stdin(std::io::stdin().is_terminal())?;
+
         let mut bytes = Vec::new();
         std::io::stdin()
             .read_to_end(&mut bytes)
@@ -291,5 +309,14 @@ mod tests {
     #[test]
     fn no_input_at_all_is_an_error_rather_than_an_empty_run() {
         assert!(Inputs::read(&[], None).is_err());
+    }
+
+    #[test]
+    fn stdin_at_a_terminal_is_refused_rather_than_read() {
+        // the read would block with nothing on screen to say
+        // why. a pipe and a redirect are not terminals, so
+        // only the bare interactive call changes
+        assert!(usable_stdin(true).is_err());
+        assert!(usable_stdin(false).is_ok());
     }
 }
