@@ -11,3 +11,4 @@ repository.workspace = true
 libsail = { path = "../libsail", version = "0.1.0" }
 anyhow = "1.0.99"
 clap = { version = "4.6.6", features = ["derive"] }
+regex = "1.11"

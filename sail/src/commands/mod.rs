@@ -1,5 +1,9 @@
 pub mod count;
+pub mod dedup;
+pub mod fetch;
+pub mod filter;
 pub mod get;
+pub mod grep;
 pub mod head;
 pub mod index;
 pub mod names;

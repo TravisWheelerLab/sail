@@ -3,7 +3,11 @@ use clap::{Parser, Subcommand, ValueEnum};
 use libsail::format::Format;
 
 use crate::commands::count::CountArgs;
+use crate::commands::dedup::DedupArgs;
+use crate::commands::fetch::FetchArgs;
+use crate::commands::filter::FilterArgs;
 use crate::commands::get::GetArgs;
+use crate::commands::grep::GrepArgs;
 use crate::commands::head::HeadArgs;
 use crate::commands::index::IndexArgs;
 use crate::commands::names::NamesArgs;
@@ -22,7 +26,11 @@ impl Cli {
     pub fn run(self) -> Result<()> {
         match self.command {
             Command::Count(args) => args.run(),
+            Command::Dedup(args) => args.run(),
+            Command::Fetch(args) => args.run(),
+            Command::Filter(args) => args.run(),
             Command::Get(args) => args.run(),
+            Command::Grep(args) => args.run(),
             Command::Head(args) => args.run(),
             Command::Index(args) => args.run(),
             Command::Names(args) => args.run(),
@@ -38,8 +46,20 @@ enum Command {
     /// Count the records in a file
     Count(CountArgs),
 
+    /// Drop records with a repeated name, keeping the first
+    Dedup(DedupArgs),
+
+    /// Extract records by name
+    Fetch(FetchArgs),
+
+    /// Keep records by size
+    Filter(FilterArgs),
+
     /// Extract records by position, 1-based
     Get(GetArgs),
+
+    /// Keep records whose name matches a pattern
+    Grep(GrepArgs),
 
     /// Keep the first n records
     Head(HeadArgs),
