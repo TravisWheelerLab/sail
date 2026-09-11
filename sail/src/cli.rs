@@ -3,7 +3,13 @@ use clap::{Parser, Subcommand, ValueEnum};
 use libsail::format::Format;
 
 use crate::commands::count::CountArgs;
+use crate::commands::get::GetArgs;
+use crate::commands::head::HeadArgs;
 use crate::commands::index::IndexArgs;
+use crate::commands::names::NamesArgs;
+use crate::commands::stats::StatsArgs;
+use crate::commands::tail::TailArgs;
+use crate::commands::validate::ValidateArgs;
 
 #[derive(Parser)]
 #[command(name = "sail", version, about = "sequence analysis I/O tool")]
@@ -16,7 +22,13 @@ impl Cli {
     pub fn run(self) -> Result<()> {
         match self.command {
             Command::Count(args) => args.run(),
+            Command::Get(args) => args.run(),
+            Command::Head(args) => args.run(),
             Command::Index(args) => args.run(),
+            Command::Names(args) => args.run(),
+            Command::Stats(args) => args.run(),
+            Command::Tail(args) => args.run(),
+            Command::Validate(args) => args.run(),
         }
     }
 }
@@ -26,8 +38,26 @@ enum Command {
     /// Count the records in a file
     Count(CountArgs),
 
+    /// Extract records by position, 1-based
+    Get(GetArgs),
+
+    /// Keep the first n records
+    Head(HeadArgs),
+
     /// Write a record index beside a file
     Index(IndexArgs),
+
+    /// Print every record's name, one per line
+    Names(NamesArgs),
+
+    /// Report the record count and the distribution of their sizes
+    Stats(StatsArgs),
+
+    /// Keep the last n records
+    Tail(TailArgs),
+
+    /// Parse every record and report the first failure
+    Validate(ValidateArgs),
 }
 
 /// A format as named on the command line.
@@ -49,4 +79,17 @@ impl From<FormatArg> for Format {
             FormatArg::Hmm => Format::Hmm,
         }
     }
+}
+
+/// Which of an alignment's two axes `--by` names.
+//
+// only Stockholm has two: a FASTA record's size is its
+// residue count and a profile's is its LENG, and neither
+// has a second axis to choose between
+#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
+pub enum Axis {
+    /// number of aligned rows
+    Depth,
+    /// number of alignment columns
+    Width,
 }

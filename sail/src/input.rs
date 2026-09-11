@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result, bail};
 use libsail::format::{self, Format};
 
-use crate::cli::FormatArg;
+use crate::cli::{Axis, FormatArg};
 
 /// One file's bytes, and what to call it in a message.
 pub struct Input {
@@ -133,7 +133,30 @@ fn read_one(path: &Path) -> Result<Input> {
 
 // ---
 
-/// Run `body` against the in-memory collection the format calls for.
+/// What one record's SIZE is, which differs per format.
+//
+// here rather than in each operation because it is one rule
+// three of them share: a FASTA record measures in residues,
+// a profile in LENG, and an alignment in whichever axis
+// `--by` named
+#[macro_export]
+macro_rules! size_of {
+    (Fasta, $axis:expr) => {
+        |record: &libsail::seq::fasta::FastaRecord| record.len()
+    };
+    (Stockholm, $axis:expr) => {
+        move |record: &libsail::seq::stockholm::StockholmRecord| match $axis {
+            $crate::cli::Axis::Depth => record.depth(),
+            $crate::cli::Axis::Width => record.width(),
+        }
+    };
+    (Hmm, $axis:expr) => {
+        |record: &libsail::seq::p7hmm::HmmRecord| record.header.leng
+    };
+}
+
+/// Run `body` against the in-memory collection the format calls for, and
+/// against the size function that format's records are measured by.
 //
 // a macro rather than a generic function because the three
 // collections are three unrelated types. Indexable's Yield
@@ -142,17 +165,43 @@ fn read_one(path: &Path) -> Result<Input> {
 // generic function, which is where the shared code lives
 macro_rules! dispatch {
     ($format:expr, $input:expr, |$collection:ident| $body:expr) => {
+        $crate::input::dispatch!(
+            $format,
+            $input,
+            $crate::cli::Axis::Depth,
+            |$collection, _size, _name| $body
+        )
+    };
+
+    ($format:expr, $input:expr,
+     |$collection:ident, $size:pat_param, $name:pat_param| $body:expr) => {
+        $crate::input::dispatch!(
+            $format,
+            $input,
+            $crate::cli::Axis::Depth,
+            |$collection, $size, $name| $body
+        )
+    };
+
+    ($format:expr, $input:expr, $axis:expr,
+     |$collection:ident, $size:pat_param, $name:pat_param| $body:expr) => {
         match $format {
             libsail::format::Format::Fasta => {
                 let $collection = libsail::seq::fasta::Fasta::new($input.bytes())?;
+                let $size = $crate::size_of!(Fasta, $axis);
+                let $name = $crate::output::name::fasta;
                 $body
             }
             libsail::format::Format::Stockholm => {
                 let $collection = libsail::seq::stockholm::Stockholm::new($input.bytes())?;
+                let $size = $crate::size_of!(Stockholm, $axis);
+                let $name = $crate::output::name::stockholm;
                 $body
             }
             libsail::format::Format::Hmm => {
                 let $collection = libsail::seq::p7hmm::Hmm::new($input.bytes())?;
+                let $size = $crate::size_of!(Hmm, $axis);
+                let $name = $crate::output::name::hmm;
                 $body
             }
         }
@@ -160,6 +209,17 @@ macro_rules! dispatch {
 }
 
 pub(crate) use dispatch;
+
+/// Fail when `--by` was given for a format with only one axis to measure.
+pub fn axis_for(format: Format, by: Option<Axis>) -> Result<Axis> {
+    match (by, format) {
+        (Some(_), Format::Fasta | Format::Hmm) => {
+            bail!("--by names one of an alignment's two axes, and {format} records have one size")
+        }
+        (Some(axis), Format::Stockholm) => Ok(axis),
+        (None, _) => Ok(Axis::Depth),
+    }
+}
 
 #[cfg(test)]
 mod tests {
