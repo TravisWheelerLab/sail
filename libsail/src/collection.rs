@@ -2,7 +2,7 @@
 //!
 //! [`Indexable`] is the whole of what an implementor writes — a length and a
 //! `get` — and the rest is built on it: [`Iterable`] by blanket impl, and
-//! `filter`/`permute`/`sort_by` through [`Indexed`], which reorders a
+//! `filter`/`permute`/`sort_by` through [`View`], which reorders a
 //! permutation of indices and leaves the records themselves alone.
 //!
 //! [`Aggregate`] is the other adapter: several collections addressed as one.
@@ -20,7 +20,7 @@ use crate::Record;
 // ---
 
 /// A reordered or narrowed view of another collection.
-pub struct Indexed<I>
+pub struct View<I>
 where
     I: Indexable,
 {
@@ -32,7 +32,7 @@ where
     indices: Vec<usize>,
 }
 
-impl<I> Indexable for Indexed<I>
+impl<I> Indexable for View<I>
 where
     I: Indexable,
 {
@@ -101,7 +101,7 @@ pub trait Indexable {
     /// its records, `Record` from one building each on demand.
     //
     // the lifetime has to sit here and nowhere else. on the
-    // trait instead, `filter(self) -> Indexed<Self>` would
+    // trait instead, `filter(self) -> View<Self>` would
     // borrow from a collection it is moving, and no extra
     // associated type conjures a lifetime
     //
@@ -206,7 +206,7 @@ pub trait Indexable {
     /// If `n > len()`. Sampling without replacement cannot return more records
     /// than there are, and the underlying `rand` routine treats asking for more
     /// as a bug rather than clamping.
-    fn sample(self, n: usize) -> Indexed<Self>
+    fn sample(self, n: usize) -> View<Self>
     where
         Self: Sized,
     {
@@ -214,7 +214,7 @@ pub trait Indexable {
     }
 
     /// [`sample`](Self::sample) from `rng`, so a run reproduces.
-    fn sample_with<R>(self, rng: &mut R, n: usize) -> Indexed<Self>
+    fn sample_with<R>(self, rng: &mut R, n: usize) -> View<Self>
     where
         Self: Sized,
         R: Rng + ?Sized,
@@ -223,14 +223,14 @@ pub trait Indexable {
 
         let indices = sample(rng, self.len(), n).into_vec();
 
-        Indexed {
+        View {
             inner: self,
             indices,
         }
     }
 
     /// The records for which `predicate` holds, in their original order.
-    fn filter<P>(self, mut predicate: P) -> Indexed<Self>
+    fn filter<P>(self, mut predicate: P) -> View<Self>
     where
         Self: Sized,
         P: FnMut(&Self::Record) -> bool,
@@ -239,40 +239,40 @@ pub trait Indexable {
             .filter(|&i| predicate(expect_record(&self, i).borrow()))
             .collect::<Vec<_>>();
 
-        Indexed {
+        View {
             inner: self,
             indices,
         }
     }
 
     /// The first `n` records, or all of them if there are fewer.
-    fn take(self, n: usize) -> Indexed<Self>
+    fn take(self, n: usize) -> View<Self>
     where
         Self: Sized,
     {
         let indices = (0..n.min(self.len())).collect();
 
-        Indexed {
+        View {
             inner: self,
             indices,
         }
     }
 
     /// Every record after the first `n`.
-    fn skip(self, n: usize) -> Indexed<Self>
+    fn skip(self, n: usize) -> View<Self>
     where
         Self: Sized,
     {
         let indices = (n.min(self.len())..self.len()).collect();
 
-        Indexed {
+        View {
             inner: self,
             indices,
         }
     }
 
     /// The same records in a uniformly random order.
-    fn permute(self) -> Indexed<Self>
+    fn permute(self) -> View<Self>
     where
         Self: Sized,
     {
@@ -280,7 +280,7 @@ pub trait Indexable {
     }
 
     /// [`permute`](Self::permute) from `rng`, so a run reproduces.
-    fn permute_with<R>(self, rng: &mut R) -> Indexed<Self>
+    fn permute_with<R>(self, rng: &mut R) -> View<Self>
     where
         Self: Sized,
         R: Rng + ?Sized,
@@ -288,7 +288,7 @@ pub trait Indexable {
         let mut indices: Vec<usize> = (0..self.len()).collect();
         indices.shuffle(rng);
 
-        Indexed {
+        View {
             inner: self,
             indices,
         }
@@ -296,7 +296,7 @@ pub trait Indexable {
 
     /// The records ordered by `cmp`, materializing both at every comparison.
     /// Prefer [`sort_by_key`](Self::sort_by_key) for an order from one value.
-    fn sort_by<F>(self, mut cmp: F) -> Indexed<Self>
+    fn sort_by<F>(self, mut cmp: F) -> View<Self>
     where
         Self: Sized,
         F: FnMut(&Self::Record, &Self::Record) -> std::cmp::Ordering,
@@ -312,14 +312,14 @@ pub trait Indexable {
 
         indices.sort_by(cmp2);
 
-        Indexed {
+        View {
             inner: self,
             indices,
         }
     }
 
     /// The records satisfying `predicate` and those that do not, in one pass.
-    fn partition<P>(&self, mut predicate: P) -> (Indexed<&Self>, Indexed<&Self>)
+    fn partition<P>(&self, mut predicate: P) -> (View<&Self>, View<&Self>)
     where
         Self: Sized,
         P: FnMut(&Self::Record) -> bool,
@@ -330,11 +330,11 @@ pub trait Indexable {
         let (yes, no) = (0..self.len()).partition(|&n| predicate(expect_record(self, n).borrow()));
 
         (
-            Indexed {
+            View {
                 inner: self,
                 indices: yes,
             },
-            Indexed {
+            View {
                 inner: self,
                 indices: no,
             },
@@ -343,7 +343,7 @@ pub trait Indexable {
 
     /// Views of `n` consecutive records each, the last shorter if it has to be.
     /// An empty collection yields none; [`split`](Self::split) always yields `k`.
-    fn chunks(&self, n: usize) -> Vec<Indexed<&Self>>
+    fn chunks(&self, n: usize) -> Vec<View<&Self>>
     where
         Self: Sized,
     {
@@ -351,7 +351,7 @@ pub trait Indexable {
 
         (0..self.len())
             .step_by(n)
-            .map(|start| Indexed {
+            .map(|start| View {
                 inner: self,
                 indices: (start..(start + n).min(self.len())).collect(),
             })
@@ -360,7 +360,7 @@ pub trait Indexable {
 
     /// `k` views of near-equal size, for handing a collection to `k` workers.
     /// Always exactly `k`, even where that means empty ones.
-    fn split(&self, k: usize) -> Vec<Indexed<&Self>>
+    fn split(&self, k: usize) -> Vec<View<&Self>>
     where
         Self: Sized,
     {
@@ -375,7 +375,7 @@ pub trait Indexable {
 
         for part in 0..k {
             let n = size + usize::from(part < remainder);
-            parts.push(Indexed {
+            parts.push(View {
                 inner: self,
                 indices: (start..start + n).collect(),
             });
@@ -387,7 +387,7 @@ pub trait Indexable {
 
     /// The records gathered by key, each group in file order and the groups in
     /// the order their keys first appear.
-    fn group_by<K, F>(&self, mut key: F) -> Vec<(K, Indexed<&Self>)>
+    fn group_by<K, F>(&self, mut key: F) -> Vec<(K, View<&Self>)>
     where
         Self: Sized,
         K: Eq + Hash,
@@ -410,7 +410,7 @@ pub trait Indexable {
             .map(|(k, indices)| {
                 (
                     k,
-                    Indexed {
+                    View {
                         inner: self,
                         indices,
                     },
@@ -420,7 +420,7 @@ pub trait Indexable {
     }
 
     /// The records ordered by a key extracted from each.
-    fn sort_by_key<K, F>(self, mut f: F) -> Indexed<Self>
+    fn sort_by_key<K, F>(self, mut f: F) -> View<Self>
     where
         Self: Sized,
         K: Ord,
@@ -439,7 +439,7 @@ pub trait Indexable {
 
         indices.sort_by(cmp);
 
-        Indexed {
+        View {
             inner: self,
             indices,
         }
@@ -459,7 +459,7 @@ pub trait Iterable: Indexable {
 }
 
 /// Walks an [`Indexable`] by position.
-pub struct IndexedIter<'a, O>
+pub struct Iter<'a, O>
 where
     O: Indexable + ?Sized,
 {
@@ -467,7 +467,7 @@ where
     pos: usize,
 }
 
-impl<'a, T> Iterator for IndexedIter<'a, T>
+impl<'a, T> Iterator for Iter<'a, T>
 where
     T: Indexable + ?Sized,
 {
@@ -494,7 +494,7 @@ where
     T: Indexable,
 {
     fn iter(&self) -> impl Iterator<Item = Self::Yield<'_>> {
-        IndexedIter {
+        Iter {
             inner: self,
             pos: 0,
         }
@@ -645,7 +645,7 @@ mod tests {
 
     #[test]
     fn iteration_stops_at_len_even_if_get_never_says_no() {
-        // without the bound in IndexedIter::next this hangs
+        // without the bound in Iter::next this hangs
         // rather than fails
         assert_eq!(Liar.iter().count(), 3);
     }

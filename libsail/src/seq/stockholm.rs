@@ -5,6 +5,7 @@
 //! annotations (`#=GC`) and per-residue annotations (`#=GR`) are the same width
 //! as the rows and stay aligned to them.
 
+use std::borrow::Cow;
 use std::fmt::Display;
 use std::fs::File;
 use std::io::{Read, Write};
@@ -15,7 +16,8 @@ use indexmap::IndexMap;
 use crate::Record;
 use crate::collection::Indexable;
 use crate::error::{Error, Result, bail_parse};
-use crate::index::{Delimit, Delimiter, Offset, build_index};
+use crate::format::Format;
+use crate::index::{Delimit, Delimiter, Index, build_index};
 use crate::parse::Parse;
 #[cfg(feature = "mmap")]
 use crate::source::MmapSource;
@@ -296,6 +298,47 @@ impl Parse for StockholmParser {
     }
 }
 
+/// The `#=GF ID` value in the bytes of one framed alignment, read without
+/// parsing it. `None` where the alignment carries none.
+pub fn name_of(record: &[u8]) -> Option<&[u8]> {
+    for line in record.split(|&b| b == b'\n') {
+        let Some((tag, rest)) = split_first_bytes(line) else {
+            continue;
+        };
+
+        // a terminator need not end its line, and the parser
+        // stops at one; see index::Delimit::DELIM
+        if tag.starts_with(b"//") {
+            return None;
+        }
+
+        if tag == b"#=GF"
+            && let Some((feature, value)) = split_first_bytes(rest)
+            && feature == b"ID"
+        {
+            return Some(value);
+        }
+    }
+
+    None
+}
+
+/// [`split_first`] over bytes, so a name can be found without decoding the
+/// alignment.
+fn split_first_bytes(line: &[u8]) -> Option<(&[u8], &[u8])> {
+    let line = line.trim_ascii_start();
+    if line.is_empty() {
+        return None;
+    }
+
+    let end = line
+        .iter()
+        .position(|b| b.is_ascii_whitespace())
+        .unwrap_or(line.len());
+
+    Some((&line[..end], line[end..].trim_ascii()))
+}
+
 /// The first whitespace-separated token and the rest of the line, trimmed.
 fn split_first(line: &str) -> Option<(&str, &str)> {
     let line = line.trim_start();
@@ -393,7 +436,7 @@ impl Indexable for Stockholm {
 #[cfg(any(unix, windows))]
 pub struct IndexedStockholm<S: Source = FileSource> {
     source: S,
-    offsets: Vec<Offset>,
+    index: Index,
 }
 
 #[cfg(any(unix, windows))]
@@ -403,7 +446,30 @@ impl IndexedStockholm<FileSource> {
         let source = FileSource::open(path)?;
         let offsets = build_index::<_, StockholmDelimiter>(source.file())?;
 
-        Ok(IndexedStockholm { source, offsets })
+        Ok(IndexedStockholm {
+            source,
+            index: Index::new(Format::Stockholm, offsets),
+        })
+    }
+
+    /// Address the file at `path` with `index` instead of scanning for it.
+    ///
+    /// # Errors
+    ///
+    /// An index of another format. Nothing here checks that it describes this
+    /// file; [`Index::load_from`] does that when one comes off disk.
+    pub fn with_index(path: impl AsRef<Path>, index: Index) -> Result<Self> {
+        if index.format() != Format::Stockholm {
+            bail_parse!(
+                "an index of {} cannot address {}, which is stockholm",
+                index.format(),
+                path.as_ref().display()
+            )
+        }
+
+        let source = FileSource::open(path)?;
+
+        Ok(IndexedStockholm { source, index })
     }
 }
 
@@ -425,12 +491,36 @@ impl IndexedStockholm<MmapSource> {
         let source = unsafe { MmapSource::open(path)? };
         let offsets = build_index::<_, StockholmDelimiter>(source.bytes())?;
 
-        Ok(IndexedStockholm { source, offsets })
+        Ok(IndexedStockholm {
+            source,
+            index: Index::new(Format::Stockholm, offsets),
+        })
     }
 }
 
 #[cfg(any(unix, windows))]
 impl<S: Source> IndexedStockholm<S> {
+    /// Where each alignment sits, and what each is called once
+    /// [`name_index`](Self::name_index) has run.
+    pub fn index(&self) -> &Index {
+        &self.index
+    }
+
+    /// Name every alignment, by a byte scan of the range the index frames rather
+    /// than a parse of it.
+    pub fn name_index(&mut self) -> Result<()> {
+        // the fields are borrowed apart because name_with
+        // takes &mut self.index while the scan reads
+        // self.source
+        let source = &self.source;
+
+        self.index.name_with(|o| {
+            let bytes = source.range(o.start, o.n_bytes)?;
+
+            Ok(name_of(&bytes).map(|name| Cow::Owned(name.to_vec())))
+        })
+    }
+
     /// Read every alignment, returning the first that fails and its index.
     pub fn validate(&self) -> Result<()> {
         // a full pass over the file, which is why open does
@@ -447,7 +537,7 @@ impl<S: Source> IndexedStockholm<S> {
     /// The `n`th alignment, or `None` past the end, keeping the failure reason
     /// that [`Indexable::get`] has to throw away.
     pub fn try_get(&self, n: usize) -> Result<Option<StockholmRecord>> {
-        let Some(o) = self.offsets.get(n) else {
+        let Some(o) = self.index.offset(n) else {
             return Ok(None);
         };
 
@@ -469,7 +559,7 @@ impl<S: Source> Indexable for IndexedStockholm<S> {
         Self: 'a;
 
     fn len(&self) -> usize {
-        self.offsets.len()
+        self.index.len()
     }
 
     /// Reads and parses the record's bytes on every call. A failure comes back
@@ -482,6 +572,51 @@ impl<S: Source> Indexable for IndexedStockholm<S> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_name_scan_agrees_with_the_parsed_record_on_every_fixture_record() {
+        // two independent readings of one file: the scan
+        // reads bytes and the parser reads an alignment, and
+        // over real tool output agreeing is what catches
+        // either of them drifting
+        let path = fixture!("families.sto");
+        let bytes = std::fs::read(path).expect(path);
+        let offsets = build_index::<_, StockholmDelimiter>(&bytes[..]).unwrap();
+        assert_eq!(offsets.len(), 2);
+
+        for o in &offsets {
+            let range = &bytes[o.start as usize..][..o.n_bytes];
+            let record = StockholmParser::parse(range).unwrap();
+
+            assert_eq!(
+                name_of(range),
+                record.id().map(str::as_bytes),
+                "the alignment at byte {}",
+                o.start
+            );
+        }
+    }
+
+    #[test]
+    fn the_name_scan_reports_no_name_for_an_alignment_with_no_gf_id() {
+        // both fixture records carry an ID, so the file
+        // cannot reach this and a synthetic alignment has to
+        let bytes = b"# STOCKHOLM 1.0\nseq1 ACGT\nseq2 ACGA\n//\n";
+
+        assert_eq!(name_of(bytes), None);
+        assert_eq!(StockholmParser::parse(bytes).unwrap().id(), None);
+    }
+
+    #[test]
+    fn a_gf_id_after_the_terminator_belongs_to_no_alignment() {
+        // the framed range ends at the terminator's line, but
+        // a caller handing over more must not be answered
+        // with the next record's name
+        let bytes = b"# STOCKHOLM 1.0\nseq1 AC\n//\n# STOCKHOLM 1.0\n#=GF ID FAM2\n//\n";
+
+        assert_eq!(name_of(bytes), None);
+    }
+
     use crate::fixture;
 
     /// Two rows, one column annotation, one per-residue annotation.
@@ -981,6 +1116,50 @@ seq9     GGGG
         assert_eq!(disk.len(), mem.len());
         for n in 0..mem.len() {
             assert_eq!(disk.cloned(n), mem.cloned(n), "record {n}");
+        }
+    }
+
+    #[test]
+    fn an_index_handed_in_addresses_the_file_the_same_as_one_scanned_for() {
+        // what writing an index down is worth: with_index
+        // skips the scan, and nothing downstream may be able
+        // to tell that it did
+        let path = fixture!("families.sto");
+        let scanned = IndexedStockholm::open(path).expect(path);
+
+        let offsets = build_index::<_, StockholmDelimiter>(File::open(path).unwrap()).unwrap();
+        let handed =
+            IndexedStockholm::with_index(path, Index::new(Format::Stockholm, offsets)).expect(path);
+
+        assert_eq!(handed.len(), scanned.len());
+        for n in 0..scanned.len() {
+            assert_eq!(handed.cloned(n), scanned.cloned(n), "record {n}");
+        }
+    }
+
+    #[test]
+    fn an_index_of_another_format_is_refused() {
+        // offsets alone cannot say what they frame, so the
+        // format the index carries is the only thing between
+        // a hmm index and a file it does not describe
+        let path = fixture!("families.sto");
+        let offsets = build_index::<_, StockholmDelimiter>(File::open(path).unwrap()).unwrap();
+
+        assert!(IndexedStockholm::with_index(path, Index::new(Format::Hmm, offsets)).is_err());
+    }
+
+    #[test]
+    fn naming_the_index_finds_every_record_by_the_name_its_parser_reports() {
+        let path = fixture!("families.sto");
+        let mut collection = IndexedStockholm::open(path).expect(path);
+        collection.name_index().unwrap();
+
+        for n in 0..collection.len() {
+            let Some(name) = collection.index().name(n) else {
+                continue;
+            };
+
+            assert_eq!(collection.index().position(name), Some(n), "record {n}");
         }
     }
 

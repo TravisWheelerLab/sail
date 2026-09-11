@@ -4,9 +4,12 @@
 //! Organised by concern rather than by format: [`seq`] and [`tbl`] hold the
 //! record types, [`index`] finds record boundaries in a file, [`collection`]
 //! addresses records by position, and [`parse`] reads text back into records.
+//! [`format`] tells the formats apart, and an [`index::Index`] saves and loads
+//! itself so a file need not be scanned twice.
 
 pub mod collection;
 pub mod error;
+pub mod format;
 pub mod index;
 pub mod lines;
 pub mod parse;

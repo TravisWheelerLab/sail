@@ -3,6 +3,7 @@
 //! A record is a name, whatever followed it on the header line, and the
 //! residues with all whitespace removed.
 
+use std::borrow::Cow;
 use std::fmt::Display;
 use std::fs::File;
 use std::io::{Read, Write};
@@ -11,7 +12,8 @@ use std::path::Path;
 use crate::Record;
 use crate::collection::Indexable;
 use crate::error::{Error, Result, bail_parse};
-use crate::index::{Delimit, Delimiter, Offset, build_index};
+use crate::format::Format;
+use crate::index::{Delimit, Delimiter, Index, build_index};
 use crate::parse::Parse;
 #[cfg(feature = "mmap")]
 use crate::source::MmapSource;
@@ -144,6 +146,25 @@ impl Parse for FastaParser {
     }
 }
 
+/// The name in the bytes of one framed record, read without parsing it.
+///
+/// `None` where the bytes do not open with the delimiter, which is the one
+/// way [`FastaParser::parse`] can fail.
+pub fn name_of(record: &[u8]) -> Option<&[u8]> {
+    let split = record
+        .iter()
+        .position(|&b| b == b'\n')
+        .unwrap_or(record.len());
+    let header = record[..split].strip_prefix(b">")?.trim_ascii();
+
+    let end = header
+        .iter()
+        .position(|b| b.is_ascii_whitespace())
+        .unwrap_or(header.len());
+
+    Some(&header[..end])
+}
+
 /// Decode `bytes`, naming what they were so a failure says where it happened.
 fn as_str<'a>(bytes: &'a [u8], what: &str) -> Result<&'a str> {
     match std::str::from_utf8(bytes) {
@@ -217,7 +238,7 @@ impl Indexable for Fasta {
 #[cfg(any(unix, windows))]
 pub struct IndexedFasta<S: Source = FileSource> {
     source: S,
-    offsets: Vec<Offset>,
+    index: Index,
 }
 
 #[cfg(any(unix, windows))]
@@ -227,7 +248,30 @@ impl IndexedFasta<FileSource> {
         let source = FileSource::open(path)?;
         let offsets = build_index::<_, FastaDelimiter>(source.file())?;
 
-        Ok(IndexedFasta { source, offsets })
+        Ok(IndexedFasta {
+            source,
+            index: Index::new(Format::Fasta, offsets),
+        })
+    }
+
+    /// Address the file at `path` with `index` instead of scanning for it.
+    ///
+    /// # Errors
+    ///
+    /// An index of another format. Nothing here checks that it describes this
+    /// file; [`Index::load_from`] does that when one comes off disk.
+    pub fn with_index(path: impl AsRef<Path>, index: Index) -> Result<Self> {
+        if index.format() != Format::Fasta {
+            bail_parse!(
+                "an index of {} cannot address {}, which is fasta",
+                index.format(),
+                path.as_ref().display()
+            )
+        }
+
+        let source = FileSource::open(path)?;
+
+        Ok(IndexedFasta { source, index })
     }
 }
 
@@ -249,12 +293,36 @@ impl IndexedFasta<MmapSource> {
         let source = unsafe { MmapSource::open(path)? };
         let offsets = build_index::<_, FastaDelimiter>(source.bytes())?;
 
-        Ok(IndexedFasta { source, offsets })
+        Ok(IndexedFasta {
+            source,
+            index: Index::new(Format::Fasta, offsets),
+        })
     }
 }
 
 #[cfg(any(unix, windows))]
 impl<S: Source> IndexedFasta<S> {
+    /// Where each record sits, and what each is called once
+    /// [`name_index`](Self::name_index) has run.
+    pub fn index(&self) -> &Index {
+        &self.index
+    }
+
+    /// Name every record, by a byte scan of the range the index frames rather
+    /// than a parse of it.
+    pub fn name_index(&mut self) -> Result<()> {
+        // the fields are borrowed apart because name_with
+        // takes &mut self.index while the scan reads
+        // self.source
+        let source = &self.source;
+
+        self.index.name_with(|o| {
+            let bytes = source.range(o.start, o.n_bytes)?;
+
+            Ok(name_of(&bytes).map(|name| Cow::Owned(name.to_vec())))
+        })
+    }
+
     /// Read every record, returning the first that fails and its index.
     pub fn validate(&self) -> Result<()> {
         // a full pass over the file, which is why open does
@@ -270,7 +338,7 @@ impl<S: Source> IndexedFasta<S> {
     /// The `n`th record, or `None` past the end, keeping the failure reason
     /// that [`Indexable::get`] has to throw away.
     pub fn try_get(&self, n: usize) -> Result<Option<FastaRecord>> {
-        let Some(o) = self.offsets.get(n) else {
+        let Some(o) = self.index.offset(n) else {
             return Ok(None);
         };
 
@@ -292,7 +360,7 @@ impl<S: Source> Indexable for IndexedFasta<S> {
         Self: 'a;
 
     fn len(&self) -> usize {
-        self.offsets.len()
+        self.index.len()
     }
 
     /// Reads and parses the record's bytes on every call. A failure comes back
@@ -305,6 +373,30 @@ impl<S: Source> Indexable for IndexedFasta<S> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_name_scan_agrees_with_the_parsed_record_on_every_fixture_record() {
+        // two independent readings of one file: the scan
+        // reads bytes and the parser reads a record, and over
+        // real tool output agreeing is what catches either of
+        // them drifting
+        let path = fixture!("proteins.fa");
+        let bytes = std::fs::read(path).expect(path);
+        let offsets = build_index::<_, FastaDelimiter>(&bytes[..]).unwrap();
+        assert_eq!(offsets.len(), 5);
+
+        for o in &offsets {
+            let range = &bytes[o.start as usize..][..o.n_bytes];
+
+            assert_eq!(
+                name_of(range).map(<[u8]>::to_vec),
+                Some(FastaParser::parse(range).unwrap().name),
+                "the record at byte {}",
+                o.start
+            );
+        }
+    }
+
     use crate::fixture;
 
     fn rec(name: &str, extra: &str, seq: &str) -> FastaRecord {
@@ -724,6 +816,50 @@ mod tests {
         assert_eq!(disk.len(), mem.len());
         for n in 0..mem.len() {
             assert_eq!(disk.cloned(n), mem.cloned(n), "record {n}");
+        }
+    }
+
+    #[test]
+    fn an_index_handed_in_addresses_the_file_the_same_as_one_scanned_for() {
+        // what writing an index down is worth: with_index
+        // skips the scan, and nothing downstream may be able
+        // to tell that it did
+        let path = fixture!("proteins.fa");
+        let scanned = IndexedFasta::open(path).expect(path);
+
+        let offsets = build_index::<_, FastaDelimiter>(File::open(path).unwrap()).unwrap();
+        let handed =
+            IndexedFasta::with_index(path, Index::new(Format::Fasta, offsets)).expect(path);
+
+        assert_eq!(handed.len(), scanned.len());
+        for n in 0..scanned.len() {
+            assert_eq!(handed.cloned(n), scanned.cloned(n), "record {n}");
+        }
+    }
+
+    #[test]
+    fn an_index_of_another_format_is_refused() {
+        // offsets alone cannot say what they frame, so the
+        // format the index carries is the only thing between
+        // a stockholm index and a file it does not describe
+        let path = fixture!("proteins.fa");
+        let offsets = build_index::<_, FastaDelimiter>(File::open(path).unwrap()).unwrap();
+
+        assert!(IndexedFasta::with_index(path, Index::new(Format::Stockholm, offsets)).is_err());
+    }
+
+    #[test]
+    fn naming_the_index_finds_every_record_by_the_name_its_parser_reports() {
+        let path = fixture!("proteins.fa");
+        let mut collection = IndexedFasta::open(path).expect(path);
+        collection.name_index().unwrap();
+
+        for n in 0..collection.len() {
+            let Some(name) = collection.index().name(n) else {
+                continue;
+            };
+
+            assert_eq!(collection.index().position(name), Some(n), "record {n}");
         }
     }
 

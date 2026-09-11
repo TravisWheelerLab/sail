@@ -4,6 +4,7 @@
 //! insert emission scores plus state transitions, all as negative natural
 //! logarithms of probabilities.
 
+use std::borrow::Cow;
 use std::fmt::Display;
 use std::fs::File;
 use std::io::{Read, Write};
@@ -12,7 +13,8 @@ use std::path::Path;
 use crate::Record;
 use crate::collection::Indexable;
 use crate::error::{Error, Result, bail_parse};
-use crate::index::{Delimit, Delimiter, Offset, build_index};
+use crate::format::Format;
+use crate::index::{Delimit, Delimiter, Index, build_index};
 use crate::parse::Parse;
 #[cfg(feature = "mmap")]
 use crate::source::MmapSource;
@@ -625,6 +627,35 @@ where
     })
 }
 
+/// The `NAME` header value in the bytes of one framed profile, read without
+/// parsing it. `None` where the header carries none.
+pub fn name_of(record: &[u8]) -> Option<&[u8]> {
+    for line in record.split(|&b| b == b'\n') {
+        let line = line.trim_ascii();
+        if line.is_empty() {
+            continue;
+        }
+
+        let end = line
+            .iter()
+            .position(|b| b.is_ascii_whitespace())
+            .unwrap_or(line.len());
+        let (key, value) = line.split_at(end);
+
+        // the header ends at HMM and the body below it is
+        // positional, so a NAME past here is not one
+        if key == b"HMM" {
+            return None;
+        }
+
+        if key == b"NAME" {
+            return Some(value.trim_ascii());
+        }
+    }
+
+    None
+}
+
 /// The first whitespace-separated token and the rest of the line, trimmed.
 fn split_first(line: &str) -> Option<(&str, &str)> {
     let line = line.trim_start();
@@ -763,7 +794,7 @@ impl Indexable for Hmm {
 #[cfg(any(unix, windows))]
 pub struct IndexedHmm<S: Source = FileSource> {
     source: S,
-    offsets: Vec<Offset>,
+    index: Index,
 }
 
 #[cfg(any(unix, windows))]
@@ -773,7 +804,30 @@ impl IndexedHmm<FileSource> {
         let source = FileSource::open(path)?;
         let offsets = build_index::<_, HmmDelimiter>(source.file())?;
 
-        Ok(IndexedHmm { source, offsets })
+        Ok(IndexedHmm {
+            source,
+            index: Index::new(Format::Hmm, offsets),
+        })
+    }
+
+    /// Address the file at `path` with `index` instead of scanning for it.
+    ///
+    /// # Errors
+    ///
+    /// An index of another format. Nothing here checks that it describes this
+    /// file; [`Index::load_from`] does that when one comes off disk.
+    pub fn with_index(path: impl AsRef<Path>, index: Index) -> Result<Self> {
+        if index.format() != Format::Hmm {
+            bail_parse!(
+                "an index of {} cannot address {}, which is hmm",
+                index.format(),
+                path.as_ref().display()
+            )
+        }
+
+        let source = FileSource::open(path)?;
+
+        Ok(IndexedHmm { source, index })
     }
 }
 
@@ -795,12 +849,36 @@ impl IndexedHmm<MmapSource> {
         let source = unsafe { MmapSource::open(path)? };
         let offsets = build_index::<_, HmmDelimiter>(source.bytes())?;
 
-        Ok(IndexedHmm { source, offsets })
+        Ok(IndexedHmm {
+            source,
+            index: Index::new(Format::Hmm, offsets),
+        })
     }
 }
 
 #[cfg(any(unix, windows))]
 impl<S: Source> IndexedHmm<S> {
+    /// Where each profile sits, and what each is called once
+    /// [`name_index`](Self::name_index) has run.
+    pub fn index(&self) -> &Index {
+        &self.index
+    }
+
+    /// Name every profile, by a byte scan of the range the index frames rather
+    /// than a parse of it.
+    pub fn name_index(&mut self) -> Result<()> {
+        // the fields are borrowed apart because name_with
+        // takes &mut self.index while the scan reads
+        // self.source
+        let source = &self.source;
+
+        self.index.name_with(|o| {
+            let bytes = source.range(o.start, o.n_bytes)?;
+
+            Ok(name_of(&bytes).map(|name| Cow::Owned(name.to_vec())))
+        })
+    }
+
     /// Read every profile, returning the first that fails and its index.
     pub fn validate(&self) -> Result<()> {
         // a full pass over the file, which is why open does
@@ -816,7 +894,7 @@ impl<S: Source> IndexedHmm<S> {
     /// The `n`th profile, or `None` past the end, keeping the failure reason
     /// that [`Indexable::get`] has to throw away.
     pub fn try_get(&self, n: usize) -> Result<Option<HmmRecord>> {
-        let Some(o) = self.offsets.get(n) else {
+        let Some(o) = self.index.offset(n) else {
             return Ok(None);
         };
 
@@ -838,7 +916,7 @@ impl<S: Source> Indexable for IndexedHmm<S> {
         Self: 'a;
 
     fn len(&self) -> usize {
-        self.offsets.len()
+        self.index.len()
     }
 
     /// Reads and parses the record's bytes on every call. A failure comes back
@@ -851,6 +929,31 @@ impl<S: Source> Indexable for IndexedHmm<S> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_name_scan_agrees_with_the_parsed_record_on_every_fixture_record() {
+        // two independent readings of one file: the scan
+        // reads bytes and the parser reads a profile, and
+        // over real tool output agreeing is what catches
+        // either of them drifting
+        let path = fixture!("models.hmm");
+        let bytes = std::fs::read(path).expect(path);
+        let offsets = build_index::<_, HmmDelimiter>(&bytes[..]).unwrap();
+        assert_eq!(offsets.len(), 2);
+
+        for o in &offsets {
+            let range = &bytes[o.start as usize..][..o.n_bytes];
+            let record = HmmParser::parse(range).unwrap();
+
+            assert_eq!(
+                name_of(range),
+                Some(record.header.name.as_bytes()),
+                "the profile at byte {}",
+                o.start
+            );
+        }
+    }
+
     use crate::fixture;
 
     /// A two-node model over a three-symbol alphabet.
@@ -1359,6 +1462,49 @@ mod tests {
         assert_eq!(disk.len(), mem.len());
         for n in 0..mem.len() {
             assert_eq!(disk.cloned(n), mem.cloned(n), "record {n}");
+        }
+    }
+
+    #[test]
+    fn an_index_handed_in_addresses_the_file_the_same_as_one_scanned_for() {
+        // what writing an index down is worth: with_index
+        // skips the scan, and nothing downstream may be able
+        // to tell that it did
+        let path = fixture!("models.hmm");
+        let scanned = IndexedHmm::open(path).expect(path);
+
+        let offsets = build_index::<_, HmmDelimiter>(File::open(path).unwrap()).unwrap();
+        let handed = IndexedHmm::with_index(path, Index::new(Format::Hmm, offsets)).expect(path);
+
+        assert_eq!(handed.len(), scanned.len());
+        for n in 0..scanned.len() {
+            assert_eq!(handed.cloned(n), scanned.cloned(n), "record {n}");
+        }
+    }
+
+    #[test]
+    fn an_index_of_another_format_is_refused() {
+        // offsets alone cannot say what they frame, so the
+        // format the index carries is the only thing between
+        // a fasta index and a file it does not describe
+        let path = fixture!("models.hmm");
+        let offsets = build_index::<_, HmmDelimiter>(File::open(path).unwrap()).unwrap();
+
+        assert!(IndexedHmm::with_index(path, Index::new(Format::Fasta, offsets)).is_err());
+    }
+
+    #[test]
+    fn naming_the_index_finds_every_record_by_the_name_its_parser_reports() {
+        let path = fixture!("models.hmm");
+        let mut collection = IndexedHmm::open(path).expect(path);
+        collection.name_index().unwrap();
+
+        for n in 0..collection.len() {
+            let Some(name) = collection.index().name(n) else {
+                continue;
+            };
+
+            assert_eq!(collection.index().position(name), Some(n), "record {n}");
         }
     }
 
