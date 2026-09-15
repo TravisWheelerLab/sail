@@ -165,7 +165,7 @@ mod tests {
 
     #[test]
     fn a_name_that_is_not_utf_8_is_still_matchable() {
-        // a FASTA name carries whatever the file carried.
+        // a FASTA name carries whatever the file carried, so
         // decoding it to a String here would leave a latin-1
         // name unmatchable by any pattern at all
         //

@@ -88,8 +88,10 @@ impl MmapSource {
     pub unsafe fn open(path: impl AsRef<Path>) -> io::Result<Self> {
         let file = File::open(path)?;
 
-        // SAFETY: forwarded to this function's own contract,
-        // which is the only place a caller can honour it
+        // SAFETY: nothing may modify or truncate the file
+        //         while the map is alive. that is this
+        //         function's own unsafe contract, which is
+        //         the only place a caller can honour it
         let map = unsafe { memmap2::Mmap::map(&file)? };
 
         Ok(MmapSource { map })

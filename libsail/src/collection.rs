@@ -72,7 +72,7 @@ where
     }
 }
 
-/// Fetch record `n`, which [`Indexable::len`] promised exists.
+/// Fetch record `n`, which [`Indexable::len`] has already counted.
 fn expect_record<'a, I>(c: &'a I, n: usize) -> I::Yield<'a>
 where
     I: Indexable + ?Sized,
@@ -103,7 +103,7 @@ pub trait Indexable {
     // the lifetime has to sit here and nowhere else. on the
     // trait instead, `filter(self) -> View<Self>` would
     // borrow from a collection it is moving, and no extra
-    // associated type conjures a lifetime
+    // associated type can introduce one
     //
     // Borrow is what keeps the two backends one API: std
     // gives both `impl Borrow<T> for &T` and
@@ -458,7 +458,7 @@ pub trait Iterable: Indexable {
     fn iter(&self) -> impl Iterator<Item = Self::Yield<'_>>;
 }
 
-/// Walks an [`Indexable`] by position.
+/// An iterator over an [`Indexable`], by position.
 pub struct Iter<'a, O>
 where
     O: Indexable + ?Sized,
@@ -716,10 +716,10 @@ mod tests {
 
     #[test]
     fn a_collection_holding_its_records_lends_one_and_a_parsing_one_owns_it() {
-        // the whole point of Yield being separate from Record.
-        // nothing else here would notice a backend quietly
-        // going back to cloning, because Borrow hides which
-        // it is at every call site that uses one
+        // the whole point of Yield being separate from
+        // Record. no other test here would catch a backend
+        // changed back to cloning, because Borrow hides
+        // which it is at every call site that uses one
         fn lends<'a, C: Indexable<Yield<'a> = &'a Unit>>(_: &'a C) {}
         fn owns<C: for<'a> Indexable<Yield<'a> = Unit>>(_: &C) {}
 

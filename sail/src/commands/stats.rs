@@ -136,13 +136,12 @@ fn summarise(
 }
 
 /// The value at `num / den` of the way through `sorted`.
-//
-// the nearest-rank definition: the smallest value at or
-// above the p-th percentile, which is one of the input
-// values rather than an interpolation between two of them.
-// a size is a count of residues or rows, and no record has
-// 376.5 of either
 fn quantile(sorted: &[usize], num: usize, den: usize) -> usize {
+    // the nearest-rank definition: the smallest value at or
+    // above the p-th percentile, so the result is one of the
+    // input values rather than an interpolation between two
+    // of them -- a size counts residues or rows, and no
+    // record has 376.5 of either
     let rank = (sorted.len() * num).div_ceil(den).max(1);
 
     sorted[rank - 1]

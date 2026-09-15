@@ -3,7 +3,7 @@
 use crate::Record;
 use crate::error::Result;
 
-/// Reads one record of a format out of the bytes it occupies.
+/// A trait to read one record of a format out of the bytes it occupies.
 pub trait Parse {
     type Record: Record;
 

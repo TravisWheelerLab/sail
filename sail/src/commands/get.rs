@@ -138,8 +138,8 @@ fn pick<C: Indexable>(collection: &C, wanted: &[(usize, usize)]) -> Result<Vec<C
     let mut picked = Vec::new();
 
     for &(first, last) in wanted {
-        // named before the loop, because a range running past
-        // the end must say so rather than come back short
+        // checked before the inner loop, so a range running
+        // past the end is an error rather than a short result
         if last > collection.len() {
             bail!(
                 "position {last} was asked for and the input holds {} records",
@@ -161,16 +161,14 @@ fn pick<C: Indexable>(collection: &C, wanted: &[(usize, usize)]) -> Result<Vec<C
 
 /// One position or one inclusive range, both 1-based, as a `(first, last)`
 /// pair.
-//
-// 1-based because the domain's own tools count records from
-// 1, and inclusive at both ends for the same reason -- a
-// caller writing 2-4 means three records
 fn parse_span(spec: &str) -> Result<(usize, usize)> {
     let number = |s: &str| -> Result<usize> {
         let n: usize = s
             .parse()
             .with_context(|| format!("{spec:?} is a position or a range like 2-4"))?;
 
+        // positions count from 1 because the domain's own
+        // tools count records from 1
         if n == 0 {
             bail!("positions count from 1, and {spec:?} names 0")
         }
@@ -178,6 +176,8 @@ fn parse_span(spec: &str) -> Result<(usize, usize)> {
         Ok(n)
     };
 
+    // inclusive at both ends, the way the domain's own tools
+    // count: a caller writing 2-4 means three records
     let (first, last) = match spec.split_once('-') {
         None => {
             let n = number(spec)?;

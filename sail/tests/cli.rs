@@ -1,8 +1,8 @@
 //! What every subcommand writes today, pinned byte for byte.
 //!
-//! These exist so the read-backend work cannot quietly change anyone's output.
-//! Several of the commands pinned here have no unit tests at all, and those
-//! are the ones a change of backend would alter without failing anything.
+//! These exist so a change of read backend cannot quietly change anyone's
+//! output. Several of the commands pinned here have no unit tests at all, and
+//! those are the ones such a change would alter without failing anything.
 //!
 //! They drive the real binary rather than the `*Args` structs, because what has
 //! to stay fixed is what a caller sees: stdout, the exit code, and the first
@@ -128,6 +128,7 @@ fn report(changed: Vec<String>) {
 struct Fixture {
     /// What the case is called, and the golden's stem.
     stem: &'static str,
+    /// The fixture file's name, under `fixtures/`.
     file: &'static str,
     /// A record the file holds, for `fetch`.
     name: &'static str,
@@ -358,8 +359,8 @@ fn the_awkward_inputs_keep_their_answers() {
             let run = sail(&[op, &path], b"");
 
             // an empty file has no format to detect, so every
-            // operation refuses it. that is the current
-            // answer and this pins it rather than judges it
+            // operation refuses it. this pins that answer
+            // rather than endorsing it
             if stem == "empty" {
                 assert!(!run.ok, "{op} accepted an empty file");
                 continue;

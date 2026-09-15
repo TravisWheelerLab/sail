@@ -23,15 +23,14 @@ pub mod tbl;
 pub use error::{Error, ErrorKind, Result};
 
 /// The path to a file in `fixtures/`, at the workspace root.
-//
-// cargo runs a test binary with its working directory set to
-// the *package* root, so a relative "fixtures/..." would look
-// inside libsail/ and find nothing. resolving from the
-// manifest instead reaches the workspace root from either
-// place, and does it at compile time
 #[cfg(test)]
 macro_rules! fixture {
     ($name:literal) => {
+        // cargo runs a test binary with its working
+        // directory set to the *package* root, so a relative
+        // "fixtures/..." would look inside libsail/ and find
+        // nothing. the manifest reaches the workspace root
+        // from either place, and does it at compile time
         concat!(env!("CARGO_MANIFEST_DIR"), "/../fixtures/", $name)
     };
 }

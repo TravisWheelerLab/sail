@@ -31,7 +31,7 @@ use crate::index::Offset;
 const CHUNK: usize = 64 * 1024;
 
 /// Index every line of `bytes` that `skip` does not reject, in file order.
-/// `skip` sees a line's **first byte**; empty lines are dropped unasked.
+/// `skip` sees a line's **first byte**, and is not called for an empty line.
 pub fn line_index<R: Read>(bytes: R, skip: fn(u8) -> bool) -> Result<Vec<Offset>> {
     scan_lines(bytes, CHUNK, skip)
 }
@@ -39,7 +39,7 @@ pub fn line_index<R: Read>(bytes: R, skip: fn(u8) -> bool) -> Result<Vec<Offset>
 /// Index every line, reading `chunk` bytes per round.
 fn scan_lines<R: Read>(mut bytes: R, chunk: usize, skip: fn(u8) -> bool) -> Result<Vec<Offset>> {
     // chunk changes how often the buffer refills and nothing
-    // else, which is what the chunk-size sweep demands
+    // else, which is what the chunk-size sweep relies on
     let chunk = chunk.max(1);
     let mut buf = vec![0u8; chunk];
     let mut lines = Vec::new();

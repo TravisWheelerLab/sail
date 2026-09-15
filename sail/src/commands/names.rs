@@ -42,10 +42,6 @@ impl NamesArgs {
     }
 
     /// One name per record, in file order.
-    //
-    // bytes rather than String: a FASTA name is not required
-    // to be utf-8, and decoding here would make an ordinary
-    // latin-1 header unprintable
     fn write_names(&self, out: &mut dyn Write) -> Result<()> {
         let inputs = Inputs::plan(&self.input, self.format, self.read, Needs::Pass)?;
 
@@ -57,6 +53,10 @@ impl NamesArgs {
             let push = |found: Option<&[u8]>, out: &mut dyn Write| -> Result<()> {
                 match found {
                     Some(found) => {
+                        // bytes rather than String: a FASTA
+                        // name is not required to be utf-8,
+                        // and decoding here would make an
+                        // ordinary latin-1 header unprintable
                         out.write_all(found)?;
                         out.write_all(b"\n")?;
                     }

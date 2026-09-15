@@ -28,9 +28,6 @@ pub fn writer(path: Option<&Path>) -> Result<Box<dyn Write>> {
 pub type Writer<R> = fn(&R, &mut dyn Write) -> libsail::Result<()>;
 
 /// Write `records` through their own format's writer.
-///
-/// Takes an iterator rather than a collection, so a run of records selected by
-/// position reaches the same writer a whole collection does.
 pub fn emit<R, B, W>(
     records: impl IntoIterator<Item = B>,
     write: Writer<R>,
@@ -40,6 +37,9 @@ where
     B: Borrow<R>,
     W: Write,
 {
+    // an iterator rather than a collection, so a run of
+    // records selected by position reaches the same writer
+    // a whole collection does
     for record in records {
         // write_to rather than Display: a Formatter takes
         // &str, so Display cannot carry a record whose name
@@ -89,16 +89,15 @@ pub fn put(format: Format, record: &[u8], rewrap: bool, w: &mut dyn Write) -> Re
 }
 
 /// A record's NAME, which each format spells differently.
-//
-// free functions rather than closures in the dispatch macro:
-// each returns a borrow of its argument, and a closure
-// returning a reference derived from its parameter is a
-// place closure inference gives up
 pub mod name {
     use libsail::seq::fasta::FastaRecord;
     use libsail::seq::p7hmm::HmmRecord;
     use libsail::seq::stockholm::StockholmRecord;
 
+    // free functions rather than closures in `dispatch!`:
+    // each returns a borrow of its argument, and closure
+    // inference cannot give a closure returning a reference
+    // derived from its parameter the lifetime it needs
     pub fn fasta(record: &FastaRecord) -> Option<&[u8]> {
         Some(&record.name)
     }

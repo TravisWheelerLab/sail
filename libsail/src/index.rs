@@ -256,7 +256,7 @@ fn frame<D: Delimit>(positions: &[u64], total: u64) -> Vec<Offset> {
 // ---
 
 /// Index every record in `bytes`, in file order. `R: Read` is enough — the
-/// position is tracked by hand, so this indexes a pipe as happily as a file.
+/// position is tracked by hand, so a pipe indexes the same as a file.
 pub fn build_index<R, D>(bytes: R) -> Result<Vec<Offset>>
 where
     R: Read,
@@ -882,9 +882,9 @@ mod tests {
 
     #[test]
     fn the_scan_finds_exactly_what_the_definition_says_it_should() {
-        // short dense inputs at every small chunk size: the
-        // risk buffering buys is a delimiter lost or doubled
-        // at a boundary, and a chunk of 2 against a four-byte
+        // short dense inputs at every small chunk size: what
+        // buffering risks is a delimiter lost or doubled at a
+        // boundary, and a chunk of 2 against a four-byte
         // pattern splits it every way it can be split
         agrees_with_the_definition::<InitiatingDelim>(">");
         agrees_with_the_definition::<TerminatingDelim>("//");
@@ -892,7 +892,7 @@ mod tests {
         agrees_with_the_definition::<WideDelim>(">>>");
     }
 
-    /// A [`Read`] that hands over as little as it likes, and sometimes an
+    /// A [`Read`] that hands over a few bytes at a time, and sometimes an
     /// error instead.
     struct Choppy<'a> {
         rest: &'a [u8],
@@ -1047,10 +1047,11 @@ mod tests {
 
     #[test]
     fn a_delimiter_at_byte_zero_needs_no_newline_in_front_of_it() {
-        // what the seeded newline buys: the first record has
+        // what the seeded newline is for: the first record has
         // no line ending before it, and still matches through
         // the ordinary path
         assert_eq!(positions_at::<InitiatingDelim>(b">a\nAC\n", 64), vec![0]);
+
         // a lone delimiter is a whole record
         assert_eq!(positions_at::<InitiatingDelim>(b">", 1), vec![0]);
     }
@@ -1093,6 +1094,7 @@ mod tests {
     fn bytes_outside_any_record_are_not_indexed() {
         // junk ahead of the first initiating delimiter
         assert_eq!(frame::<InitiatingDelim>(&[4], 10), vec![off(4, 6)]);
+
         // a truncated record after the last terminator
         assert_eq!(frame::<TerminatingDelim>(&[2], 12), vec![off(0, 5)]);
     }
@@ -1126,7 +1128,7 @@ mod tests {
         );
     }
 
-    // --- Index
+    // ---
 
     /// The length and modification time [`sample`] is stamped with.
     const SOURCE_LEN: u64 = 4869;

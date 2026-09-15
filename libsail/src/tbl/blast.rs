@@ -8,12 +8,11 @@ use crate::Record;
 use crate::error::Result;
 use crate::parse::Parse;
 
-/// The default `-outfmt 6` / `-outfmt 7` column set, also what
-/// `diamond`, `vsearch`, and `mmseqs convertalis` emit by default.
+/// The default `-outfmt 6` / `-outfmt 7` column set.
 ///
 /// ```text
-/// | 0 | 1 |   2   |   3   |    4     |    5    |   6   |  7  |   8   |  9  |  10  |   11   |
-/// qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore
+/// 0       1       2       3       4         5        6       7     8       9     10      11
+/// qseqid  sseqid  pident  length  mismatch  gapopen  qstart  qend  sstart  send  evalue  bitscore
 /// ```
 ///
 /// A non-default `-outfmt "6 ..."` column set is a different layout; write an

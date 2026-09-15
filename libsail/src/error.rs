@@ -1,7 +1,7 @@
 //! The crate's error type.
 //!
-//! Two variants, because two things can go wrong in a library of shapes: a
-//! record fails its own invariants, or writing one out fails at the sink.
+//! Two variants, for the two things that go wrong here: a record fails its
+//! own invariants, or writing one out fails at the sink.
 
 use std::fmt;
 
@@ -21,10 +21,9 @@ pub enum ErrorKind {
 /// An error from building or writing a record.
 #[derive(Debug)]
 pub struct Error {
-    // held inline rather than boxed. sail boxed its payload
-    // because Result<bool> sat on a per-line hot path; no
-    // such path exists here, and a two-variant enum is
-    // cheaper to carry than a pointer chase to reach it
+    // held inline rather than boxed: no Result in this
+    // crate sits on a per-line path, and a two-variant enum
+    // is cheaper to carry than a pointer chase to reach it
     kind: ErrorKind,
 }
 
@@ -69,7 +68,7 @@ impl From<std::io::Error> for Error {
     }
 }
 
-/// Return a [`ErrorKind::Parse`] error, formatted.
+/// Return an [`ErrorKind::Parse`] error, formatted.
 #[macro_export]
 macro_rules! bail_parse {
     ($($arg:tt)*) => {

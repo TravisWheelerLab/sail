@@ -8,9 +8,11 @@ use crate::Record;
 use crate::error::Result;
 use crate::parse::Parse;
 
+/// nail's table output: one row per hit.
+///
 /// ```text
-/// |   0   |   1  |   2  |  3  |  4  |  5  |  6  |  7 |   8  |  9  |
-/// # target  query  tstart tend  qstart qend  score bias evalue cellfrac
+/// 0       1      2       3     4       5     6      7     8       9
+/// target  query  tstart  tend  qstart  qend  score  bias  evalue  cellfrac
 /// ```
 pub struct NailTable;
 

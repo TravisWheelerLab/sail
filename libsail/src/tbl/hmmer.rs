@@ -11,8 +11,8 @@ use crate::parse::Parse;
 /// `hmmsearch`/`hmmscan` `--tblout`: one row per sequence.
 ///
 /// ```text
-/// |      0      |    1     |     2      |     3    |    4   |  5   |  6  | .. |         18          |
-/// # target name   accession   query name  accession  E-value  score  bias  ..  description of target
+/// 0            1          2           3          4        5      6     ..  18
+/// target name  accession  query name  accession  E-value  score  bias  ..  description of target
 /// ```
 ///
 /// The trailing description is free text containing spaces, so it is not a
@@ -34,8 +34,8 @@ impl HitColumns for HmmerTable {
 /// `hmmsearch`/`hmmscan` `--domtblout`: one row per domain.
 ///
 /// ```text
-/// |      0      |  1  |  2  |     3     |  4  |  5  |    6    |  7  | .. | 15 | 16 | 17 | 18 | .. |
-/// # target name  acc   tlen  query name  acc   qlen  E-value  score  ..  hmm from/to  ali from/to ..
+/// 0            1    2     3           4    5     6        7      ..  15/16        17/18
+/// target name  acc  tlen  query name  acc  qlen  E-value  score  ..  hmm from/to  ali from/to
 /// ```
 ///
 /// Coordinates are the hmm (query) and ali (target) spans.
@@ -55,8 +55,8 @@ impl HitColumns for HmmerDomTable {
 
 // ---
 
-/// A column's value, or `None` where HMMER wrote the `-` it fills a column
-/// it has nothing for with.
+/// A column's value, or `None` for the `-` HMMER writes where it has nothing
+/// to report.
 fn reported(value: &str) -> Option<String> {
     match value {
         "" | "-" => None,
@@ -90,8 +90,8 @@ pub struct HmmerRow {
     pub best_score: f32,   //  8  score
     pub best_bias: f32,    //  9  bias
 
-    // domain number estimation, HMMER's own count of what it
-    // found, which the cryptic column names do not give away
+    // domain number estimation: HMMER's own count of
+    // what it found
     pub exp: f32,   // 10  exp  expected number of domains
     pub reg: usize, // 11  reg  regions defined
     pub clu: usize, // 12  clu  regions that looked multidomain and were clustered
@@ -461,7 +461,7 @@ mod tests {
     fn a_description_with_spaces_stays_one_field() {
         // the reason these parsers do not just split the row:
         // the description runs to end of line, spaces and all,
-        // and no split of the whole row hands it back
+        // so splitting the whole row breaks it into pieces
         let rows = HmmerRows::open(fixture!("hits.hmmer.tblout")).unwrap();
 
         assert_eq!(
@@ -469,8 +469,8 @@ mod tests {
             Some("Sex muscle abnormal protein 5")
         );
 
-        // and a '-' is HMMER saying it had nothing to report,
-        // not an accession named '-'
+        // and a '-' is HMMER reporting nothing, not an
+        // accession named '-'
         assert!(rows.iter().all(|r| r.target_accession.is_none()));
         assert_eq!(
             rows.get(0).unwrap().query_accession.as_deref(),

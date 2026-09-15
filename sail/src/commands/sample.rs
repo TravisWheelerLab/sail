@@ -47,12 +47,11 @@ impl SampleArgs {
         dispatch!(inputs.format(), entry, |collection, _size, _name, write| {
             let n = draw_size(count, fraction, collection.len())?;
 
-            // sample_with rather than sample, always: the
-            // seeded form is the real one, because a figure
-            // that ends up in a paper has to reproduce. one
-            // rng type either way, so an unseeded run draws
-            // its seed from the thread generator rather than
-            // taking a second code path
+            // sample_with rather than sample, always: a draw
+            // that ends up in a paper has to reproduce, and
+            // one rng type either way means an unseeded run
+            // seeds itself from the thread generator rather
+            // than taking a second code path
             let mut rng = match seed {
                 Some(seed) => StdRng::seed_from_u64(seed),
                 None => StdRng::from_rng(&mut rand::rng()),
@@ -71,9 +70,8 @@ fn draw_size(count: Option<usize>, fraction: Option<f64>, len: usize) -> Result<
         (Some(n), _) => {
             // sampling without replacement cannot return more
             // records than there are, and the rand routine
-            // treats asking for more as a bug rather than
-            // clamping -- so the error is raised here, naming
-            // both numbers
+            // panics rather than clamping -- so the error is
+            // raised here, naming both numbers
             if n > len {
                 bail!("{n} records were asked for and the input holds {len}")
             }

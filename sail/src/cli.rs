@@ -116,9 +116,6 @@ enum Command {
 }
 
 /// A format as named on the command line.
-//
-// libsail's Format with a ValueEnum impl, kept here
-// because libsail must not depend on clap
 #[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
 pub enum FormatArg {
     Fasta,
@@ -128,6 +125,9 @@ pub enum FormatArg {
 
 impl From<FormatArg> for Format {
     fn from(arg: FormatArg) -> Format {
+        // a mapping onto an identical enum because libsail
+        // must not depend on clap: FormatArg is libsail's
+        // Format with a ValueEnum impl
         match arg {
             FormatArg::Fasta => Format::Fasta,
             FormatArg::Stockholm => Format::Stockholm,
@@ -179,10 +179,6 @@ pub enum Order {
 }
 
 /// Which of an alignment's two axes `--by` names.
-//
-// only Stockholm has two: a FASTA record's size is its
-// residue count and a profile's is its LENG, and neither
-// has a second axis to choose between
 #[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
 pub enum Axis {
     /// number of aligned rows

@@ -217,15 +217,14 @@ fn resolve(mode: Mode, needs: Needs, entries: &[Input]) -> Result<Backend> {
 }
 
 /// Fail when `asserted` names a format the input is not.
-//
-// one wording for every operation: --format is an assertion
-// about a file and never a conversion of one, so a
-// disagreement is the caller's mistake rather than a
-// fallback to what they asked for
 fn assert_format(found: Format, asserted: Option<FormatArg>, what: &str) -> Result<()> {
     if let Some(asserted) = asserted.map(Format::from)
         && asserted != found
     {
+        // --format is an assertion about a file and never a
+        // conversion of one, so a disagreement is the
+        // caller's mistake rather than a fallback to what
+        // they asked for
         bail!("--format {asserted} was given, but {what} reads as {found}");
     }
 
@@ -233,14 +232,11 @@ fn assert_format(found: Format, asserted: Option<FormatArg>, what: &str) -> Resu
 }
 
 /// Refuse stdin at a terminal, where the read would block with no sign of why.
-//
-// fifteen of the nineteen operations default their input to
-// `-`, so a bare `sail count` at a prompt would otherwise
-// sit on a read the caller never meant to start. taken as a
-// bool rather than read here, so the decision is reachable
-// from a test -- nothing can make a test binary's stdin a
-// terminal
 fn usable_stdin(is_terminal: bool) -> Result<()> {
+    // fifteen of the nineteen operations default their
+    // input to `-`, so a bare `sail count` at a prompt
+    // would otherwise sit on a read the caller never meant
+    // to start
     if is_terminal {
         bail!("no input: give a path, or pipe something in")
     }
@@ -251,6 +247,9 @@ fn usable_stdin(is_terminal: bool) -> Result<()> {
 /// One input and the format it opens with.
 fn identify(path: &Path) -> Result<(Input, Format)> {
     if path.as_os_str() == "-" {
+        // is_terminal read here and passed in, so the
+        // refusal is reachable from a test -- nothing can
+        // make a test binary's stdin a terminal
         usable_stdin(std::io::stdin().is_terminal())?;
 
         let mut bytes = Vec::new();
@@ -284,11 +283,6 @@ fn identify(path: &Path) -> Result<(Input, Format)> {
 // ---
 
 /// What one record's SIZE is, which differs per format.
-//
-// here rather than in each operation because it is one rule
-// three of them share: a FASTA record measures in residues,
-// a profile in LENG, and an alignment in whichever axis
-// `--by` named
 #[macro_export]
 macro_rules! size_of {
     (Fasta, $axis:expr) => {
@@ -330,12 +324,6 @@ pub fn size_framed(format: Format, record: &[u8], axis: Axis) -> Result<usize> {
 
 /// Run `body` against the in-memory collection the format calls for, and
 /// against the size function that format's records are measured by.
-//
-// a macro rather than a generic function because the three
-// collections are three unrelated types. Indexable's Yield
-// GAT rules out `dyn`, so the type has to be chosen where it
-// is written down -- and `body` is usually a call to a
-// generic function, which is where the shared code lives
 macro_rules! dispatch {
     ($format:expr, $input:expr, |$collection:ident| $body:expr) => {
         $crate::input::dispatch!(
@@ -358,6 +346,12 @@ macro_rules! dispatch {
 
     ($format:expr, $input:expr, $axis:expr,
      |$collection:ident, $size:pat_param, $name:pat_param, $write:pat_param| $body:expr) => {
+        // a macro rather than a generic function: the three
+        // collections are unrelated types, and Indexable's
+        // Yield GAT rules out `dyn`, so the type has to be
+        // chosen where it is written down. `body` is
+        // usually a call to a generic function, which is
+        // where the shared code lives
         match $format {
             libsail::format::Format::Fasta => {
                 let $collection = libsail::seq::fasta::Fasta::new($input.reader()?)?;
@@ -390,12 +384,11 @@ macro_rules! dispatch {
 pub(crate) use dispatch;
 
 /// Run `body` against the disk-backed collection the format calls for.
-//
-// `dispatch!` for `--read indexed`: the same three
-// unrelated types, addressed on disk rather than held in
-// memory
 macro_rules! indexed {
     ($format:expr, $path:expr, |$collection:ident| $body:expr) => {
+        // `dispatch!` for `--read indexed`: the same three
+        // unrelated types, addressed on disk rather than
+        // held in memory
         match $format {
             libsail::format::Format::Fasta => {
                 let $collection = libsail::seq::fasta::IndexedFasta::open($path)?;

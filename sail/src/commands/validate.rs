@@ -28,15 +28,15 @@ impl ValidateArgs {
         }
 
         for path in &self.input {
-            // a path rather than buffered bytes, and the disk
-            // backends rather than the in-memory ones: only
-            // those parse one record at a time, so only they
-            // can say which record failed. Fasta::open parses
-            // everything before it returns anything
             if path.as_os_str() == "-" {
                 bail!("validate needs a path, not stdin: it reports a record's byte offset");
             }
 
+            // the disk backends rather than the in-memory
+            // ones: only those parse one record at a time, so
+            // only they can report which record failed --
+            // Fasta::open parses everything before it returns
+            // anything
             let count = match format_of_path(path, self.format)? {
                 Format::Fasta => {
                     let c = IndexedFasta::open(path)?;

@@ -201,7 +201,7 @@ impl Delimit for StockholmDelimiter {
 
 impl Record for StockholmRecord {}
 
-/// Reads a Stockholm alignment out of the bytes of one record.
+/// A parser for the bytes of one Stockholm alignment.
 pub struct StockholmParser {}
 
 impl Parse for StockholmParser {
@@ -262,6 +262,7 @@ impl Parse for StockholmParser {
                 }
                 "#=GC" => {
                     let (feature, value) = split_two(rest, "#=GC", line)?;
+
                     // concatenated, not replaced: one feature
                     // reappears in every block and the pieces
                     // are consecutive stretches of one row
@@ -492,7 +493,10 @@ impl IndexedStockholm<MmapSource> {
     /// The file must not be modified or truncated while the collection is
     /// alive; see [`MmapSource::open`].
     pub unsafe fn map(path: impl AsRef<Path>) -> Result<Self> {
-        // SAFETY: forwarded to this function's own contract
+        // SAFETY: the caller has promised, through this
+        //         function's own contract, not to modify
+        //         or truncate the file while the
+        //         collection is alive
         let source = unsafe { MmapSource::open(path)? };
         let offsets = build_index::<_, StockholmDelimiter>(source.bytes())?;
 
@@ -848,8 +852,9 @@ seq9     GGGG
         // the reason a record holds each row whole: a name
         // reappears in every block and its pieces are
         // consecutive stretches of the same sequence
-        // bound, because get lends out of the collection
-        // rather than handing back a copy of a record
+        //
+        // the collection is bound to a local because get lends
+        // out of it rather than handing back a copy
         let sto = two();
         let rec = sto.get(0).unwrap();
 
@@ -1191,8 +1196,9 @@ seq9     GGGG
         let path = temp_sto("mapped", TWO);
         let mem = two();
         let read = IndexedStockholm::open(&path).unwrap();
+
         // SAFETY: this test owns the file and does not touch
-        // it while the map is alive
+        //         it while the map is alive
         let mapped = unsafe { MmapStockholm::map(&path) }.unwrap();
 
         assert_eq!(mapped.len(), mem.len());

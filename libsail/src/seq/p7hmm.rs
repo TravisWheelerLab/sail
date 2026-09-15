@@ -373,7 +373,7 @@ impl Delimit for HmmDelimiter {
 
 impl Record for HmmRecord {}
 
-/// Reads a profile HMM out of the bytes of one record.
+/// A parser for the bytes of one profile HMM.
 pub struct HmmParser {}
 
 impl Parse for HmmParser {
@@ -477,6 +477,7 @@ where
                     "MSV" => h.msv = Some(g),
                     "VITERBI" => h.viterbi = Some(g),
                     "FORWARD" => h.forward = Some(g),
+
                     // reported rather than kept in extra: STATS
                     // is a modelled line, so an unknown
                     // distribution inside one is a surprise
@@ -850,7 +851,10 @@ impl IndexedHmm<MmapSource> {
     /// The file must not be modified or truncated while the collection is
     /// alive; see [`MmapSource::open`].
     pub unsafe fn map(path: impl AsRef<Path>) -> Result<Self> {
-        // SAFETY: forwarded to this function's own contract
+        // SAFETY: the caller has promised, through this
+        //         function's own contract, not to modify
+        //         or truncate the file while the
+        //         collection is alive
         let source = unsafe { MmapSource::open(path)? };
         let offsets = build_index::<_, HmmDelimiter>(source.bytes())?;
 
@@ -1368,6 +1372,7 @@ mod tests {
         assert_eq!(sh3.header.leng, 46);
         assert_eq!(sh3.model.k(), 20);
         assert_eq!(sh3.header.acc.as_deref(), Some("PF00018.35"));
+
         // GA/TC/NC are Pfam's own curated cutoffs, carried through
         // hmmbuild from the SEED's #=GF GA rather than invented here
         assert_eq!(sh3.header.ga, Some((22.90, 22.90)));
@@ -1536,8 +1541,9 @@ mod tests {
         let path = temp_hmm("mapped", &two_profiles());
         let mem = Hmm::new(&two_profiles()[..]).unwrap();
         let read = IndexedHmm::open(&path).unwrap();
+
         // SAFETY: this test owns the file and does not touch
-        // it while the map is alive
+        //         it while the map is alive
         let mapped = unsafe { MmapHmm::map(&path) }.unwrap();
 
         assert_eq!(mapped.len(), mem.len());

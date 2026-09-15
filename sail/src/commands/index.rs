@@ -27,9 +27,6 @@ pub struct IndexArgs {
 
 impl IndexArgs {
     pub fn run(self) -> Result<()> {
-        // the one command that will not read stdin: an
-        // index is byte offsets into a file that is still
-        // there afterwards, and a pipe is neither
         if self.input.as_os_str() == "-" {
             bail!(
                 "index needs a path, not stdin: an index is byte offsets into a file that stays put"
@@ -45,7 +42,7 @@ impl IndexArgs {
 
         // one arm per format because the collection type is
         // what carries the name scan, and each is its own
-        // type. what the three arms do is the same
+        // type. the three arms do the same work
         let count = match found {
             Format::Fasta => {
                 let mut collection = IndexedFasta::open(&self.input)?;
@@ -85,15 +82,14 @@ mod tests {
     use super::*;
 
     /// Copy a fixture somewhere writable and hand back the copy.
-    //
-    // fixtures/ is checked in, and indexing a file writes an
-    // index next to it
     fn scratch(tag: &str, fixture: &str) -> PathBuf {
         let from = Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../fixtures")
             .join(fixture);
         let to = std::env::temp_dir().join(format!("sail-{tag}-{}-{fixture}", std::process::id()));
 
+        // fixtures/ is checked in, and indexing a file writes
+        // an index next to it
         std::fs::copy(&from, &to).unwrap();
 
         to

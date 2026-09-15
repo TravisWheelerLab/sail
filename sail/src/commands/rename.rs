@@ -146,13 +146,11 @@ struct Rules {
 
 impl Rules {
     /// The new name for the record at position `n`.
-    //
-    // the order is fixed and is what makes the flags
-    // combinable: --number replaces the name outright, then
-    // --replace rewrites it, then --prefix and --suffix wrap
-    // what is left. running prefix before replace would let a
-    // pattern match the prefix it just added
     fn apply(&self, name: &[u8], n: usize) -> Vec<u8> {
+        // the order is fixed and is what makes the flags
+        // combinable: --number replaces the name outright,
+        // then --replace rewrites it, then --prefix and
+        // --suffix wrap what is left
         let mut now = match &self.number {
             // 1-based, and zero-padded to four so the names
             // sort into record order
@@ -169,6 +167,8 @@ impl Rules {
             now = pattern.replace_all(&now, &with[..]).into_owned();
         }
 
+        // after --replace, so a pattern cannot match the
+        // prefix this same call just added
         let mut out = self.prefix.clone();
         out.extend_from_slice(&now);
         out.extend_from_slice(&self.suffix);
@@ -178,15 +178,14 @@ impl Rules {
 }
 
 /// Rewrite an alignment's `#=GF ID`, adding one where it had none.
-//
-// the record reads its id back out of gf rather than storing
-// it, so renaming means editing that line -- nothing else in
-// the record would be written out
 fn set_id(record: &mut libsail::seq::stockholm::StockholmRecord, name: &[u8]) -> Result<()> {
     let name = std::str::from_utf8(name)
         .context("an alignment's #=GF ID is written as text")?
         .to_string();
 
+    // the record reads its id back out of gf rather than
+    // storing it, so renaming means editing that line --
+    // nothing else in the record would be written out
     match record.gf.iter_mut().find(|(feature, _)| feature == "ID") {
         Some((_, value)) => *value = name,
 
@@ -246,7 +245,7 @@ mod tests {
     #[test]
     fn a_replacement_runs_before_the_prefix_it_would_otherwise_match() {
         // order is what makes the flags combinable: a pattern
-        // must not see the prefix this same call just added
+        // must not match the prefix this same call just added
         let r = rules(RenameArgs {
             prefix: Some("HUMAN_".into()),
             replace: Some("HUMAN".into()),

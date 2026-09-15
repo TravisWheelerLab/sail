@@ -35,8 +35,7 @@ impl CatArgs {
         // parsed and re-emitted rather than copied through:
         // concatenating the bytes of two Stockholm files
         // gives one stream with two headers in it, which is
-        // not an alignment file. going through the parser is
-        // what makes the result readable again
+        // not an alignment file
         for entry in inputs.entries() {
             match inputs.backend() {
                 Backend::Stream => {

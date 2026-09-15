@@ -88,7 +88,7 @@ pub trait HitColumns {
 
 // ---
 
-/// A `#` opens a comment in every layout the crate models.
+/// Whether `b` opens a comment, which every layout modelled here spells `#`.
 fn is_comment(b: u8) -> bool {
     b == b'#'
 }
@@ -180,9 +180,9 @@ fn column<'a>(cols: &[&'a str], i: usize, what: &str) -> Result<&'a str> {
     match cols.get(i) {
         Some(c) => Ok(*c),
         // reachable only from a layout whose index is past
-        // its own N_COLUMNS.
-        // every_layout_indexes_within_its_own_row rules that
-        // out for the four here, not for a caller's
+        // its own N_COLUMNS, which
+        // every_layout_indexes_within_its_own_row rules out
+        // for the four here but not for a caller's
         None => bail_parse!("this layout puts {what} at column {i}, past the row"),
     }
 }
@@ -534,9 +534,9 @@ mod tests {
 
     #[test]
     fn hit_display_is_a_summary_and_says_so() {
-        // pinned: Display is a summary line, not a rendering
-        // of the record. unlike the seq types it drops the
-        // score and both spans, and cannot round-trip
+        // Display is a summary line, not a rendering of the
+        // record: unlike the seq types it drops the score and
+        // both spans, and cannot round-trip
         let hit = Hit {
             query: "q1".into(),
             target: "t1".into(),
@@ -570,6 +570,7 @@ mod tests {
                 assert!(i < n, "{what}: {name} past the row");
             }
         }
+
         // coordinates come in pairs or not at all
         assert_eq!(
             C::Q_START.is_some(),
@@ -944,8 +945,8 @@ mod tests {
         // them rather than however they hash
         assert_eq!(groups[0].0.1, "SEM5_CAEEL", "the first row's target leads");
 
-        // the best hit per pair, which is what a caller
-        // actually wants out of a grouping
+        // the best hit per pair, which is what a
+        // grouping is for
         let best = groups[0].1.min_by_key(|h| h.e_value.to_bits()).unwrap();
         assert!(best.e_value <= groups[0].1.get(0).unwrap().e_value);
     }

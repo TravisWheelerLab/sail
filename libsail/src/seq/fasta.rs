@@ -98,7 +98,7 @@ impl Delimit for FastaDelimiter {
 
 impl Record for FastaRecord {}
 
-/// Reads a FASTA record out of the bytes of one record.
+/// A parser for the bytes of one FASTA record.
 pub struct FastaParser {}
 
 impl Parse for FastaParser {
@@ -137,6 +137,7 @@ impl Parse for FastaParser {
         Ok(FastaRecord {
             name: header[..split].to_vec(),
             extra: header[split..].trim_ascii().to_vec(),
+
             // reserved rather than collected: Filter's
             // size_hint floor is 0, so collect() doubles from
             // 8 and memcpy's the residues at every step.
@@ -180,6 +181,7 @@ pub fn name_of(record: &[u8]) -> Option<&[u8]> {
 fn as_str<'a>(bytes: &'a [u8], what: &str) -> Result<&'a str> {
     match std::str::from_utf8(bytes) {
         Ok(s) => Ok(s),
+
         // an error rather than replacement characters: a
         // mangled name leaves the record unfindable by the
         // name it has
@@ -295,10 +297,10 @@ impl Fasta {
         for (i, o) in offsets.iter().enumerate() {
             let range = &all[o.start as usize..][..o.n_bytes];
 
-            // defensive: build_index only frames ranges
-            // starting with the delimiter, so this cannot
-            // currently fail. if it ever can, which record
-            // failed matters as much as why
+            // build_index only frames ranges starting with the
+            // delimiter, so this cannot currently fail. if it
+            // ever can, which record failed matters as much as
+            // why
             records.push(
                 FastaParser::parse(range)
                     .map_err(|e| Error::parse(format!("record {i} at byte {}: {e}", o.start)))?,
@@ -388,7 +390,10 @@ impl IndexedFasta<MmapSource> {
     /// The file must not be modified or truncated while the collection is
     /// alive; see [`MmapSource::open`].
     pub unsafe fn map(path: impl AsRef<Path>) -> Result<Self> {
-        // SAFETY: forwarded to this function's own contract
+        // SAFETY: the caller has promised, through this
+        //         function's own contract, not to modify
+        //         or truncate the file while the
+        //         collection is alive
         let source = unsafe { MmapSource::open(path)? };
         let offsets = build_index::<_, FastaDelimiter>(source.bytes())?;
 
@@ -752,6 +757,7 @@ mod tests {
             FastaParser::parse(b">a d\nAC").unwrap(),
             rec("a", "d", "AC")
         );
+
         // a header and nothing else at all
         assert_eq!(FastaParser::parse(b">a").unwrap(), rec("a", "", ""));
     }
@@ -1143,8 +1149,9 @@ mod tests {
         let path = temp_fasta("mapped", THREE);
         let mem = Fasta::new(THREE).unwrap();
         let read = IndexedFasta::open(&path).unwrap();
+
         // SAFETY: this test owns the file and does not touch
-        // it while the map is alive
+        //         it while the map is alive
         let mapped = unsafe { MmapFasta::map(&path) }.unwrap();
 
         assert_eq!(mapped.len(), mem.len());
@@ -1171,6 +1178,7 @@ mod tests {
         // mmap of a zero-length file is EINVAL on Linux;
         // memmap2 special-cases it, and this is what says so
         let path = temp_fasta("mapped-empty", b"");
+
         // SAFETY: this test owns the file and leaves it alone
         let mapped = unsafe { MmapFasta::map(&path) }.unwrap();
 

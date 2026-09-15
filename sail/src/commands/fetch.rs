@@ -157,10 +157,6 @@ impl FetchArgs {
 
     /// Every name asked for, in the order asked, from the command line and
     /// then from `-f`.
-    //
-    // bytes rather than String: a FASTA name need not be
-    // utf-8, so a name file is read as bytes and split on
-    // newlines rather than decoded
     fn wanted(&self) -> Result<Vec<Vec<u8>>> {
         let mut wanted: Vec<Vec<u8>> = self.names.iter().map(|n| n.as_bytes().to_vec()).collect();
 
@@ -168,6 +164,8 @@ impl FetchArgs {
             return Ok(wanted);
         };
 
+        // a FASTA name need not be utf-8, so the file is read
+        // as bytes and split on newlines rather than decoded
         let bytes = std::fs::read(path)
             .with_context(|| format!("reading the names in {}", path.display()))?;
 

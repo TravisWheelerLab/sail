@@ -62,10 +62,8 @@ pub fn detect(bytes: &[u8]) -> Result<Format> {
     }
 }
 
-/// The format of the file at `path`, read from its head.
-///
-/// The file is opened and closed here, so a caller that goes on to read it
-/// starts from byte 0 of its own handle.
+/// The format of the file at `path`, read from its head. The file is opened
+/// and closed here, so a caller's own handle still starts at byte 0.
 pub fn detect_path(path: impl AsRef<Path>) -> Result<Format> {
     let mut head = [0; PREFIX];
     let filled = read_some(&mut File::open(path)?, &mut head)?;
