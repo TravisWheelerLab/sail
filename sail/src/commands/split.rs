@@ -45,7 +45,7 @@ impl SplitArgs {
 
         let (parts, size, each) = (self.parts, self.size, self.each);
 
-        dispatch!(inputs.format(), entry, |collection| {
+        dispatch!(inputs.format(), entry, |collection, _size, _name, write| {
             let groups = group_sizes(parts, size, each, collection.len())?;
 
             let mut at = 0;
@@ -53,7 +53,7 @@ impl SplitArgs {
                 let path = part_path(&prefix, i + 1, extension);
                 let out = writer(Some(&path))?;
 
-                emit((&collection).skip(at).take(*take).iter(), out)?;
+                emit((&collection).skip(at).take(*take).iter(), write, out)?;
                 at += take;
 
                 println!("{take}\t{}", path.display());

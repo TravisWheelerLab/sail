@@ -3,10 +3,11 @@ use std::path::PathBuf;
 use anyhow::Result;
 use clap::Args;
 use libsail::collection::Iterable;
+use libsail::index::Reader;
 
-use crate::cli::FormatArg;
-use crate::input::{Inputs, dispatch};
-use crate::output::{emit, writer};
+use crate::cli::{FormatArg, ReadArgs};
+use crate::input::{Backend, Inputs, Needs, dispatch, indexed, indexed_path};
+use crate::output::{emit, write_framed, writer};
 
 #[derive(Args)]
 pub struct CatArgs {
@@ -21,11 +22,14 @@ pub struct CatArgs {
     /// where to write [default: stdout]
     #[arg(short, long)]
     pub output: Option<PathBuf>,
+
+    #[command(flatten)]
+    pub read: ReadArgs,
 }
 
 impl CatArgs {
     pub fn run(self) -> Result<()> {
-        let inputs = Inputs::read(&self.input, self.format)?;
+        let inputs = Inputs::plan(&self.input, self.format, self.read, Needs::Pass)?;
         let mut out = writer(self.output.as_deref())?;
 
         // parsed and re-emitted rather than copied through:
@@ -34,9 +38,31 @@ impl CatArgs {
         // not an alignment file. going through the parser is
         // what makes the result readable again
         for entry in inputs.entries() {
-            dispatch!(inputs.format(), entry, |collection| {
-                emit(collection.iter(), &mut out)?;
-            });
+            match inputs.backend() {
+                Backend::Stream => {
+                    let mut reader = Reader::new(entry.reader()?, inputs.format());
+
+                    while reader.advance()? {
+                        write_framed(inputs.format(), reader.record(), &mut out)?;
+                    }
+                }
+                Backend::Indexed => {
+                    let path = indexed_path(entry)?;
+
+                    indexed!(inputs.format(), path, |collection| {
+                        for n in 0..collection.index().len() {
+                            let record = collection.record(n)?.expect("a counted record");
+
+                            write_framed(inputs.format(), &record, &mut out)?;
+                        }
+                    });
+                }
+                Backend::Memory => {
+                    dispatch!(inputs.format(), entry, |collection, _size, _name, write| {
+                        emit(collection.iter(), write, &mut out)?;
+                    });
+                }
+            }
         }
 
         Ok(())

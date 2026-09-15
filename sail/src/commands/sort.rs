@@ -50,25 +50,30 @@ impl SortArgs {
         let out = writer(self.output.as_deref())?;
         let (key, reverse) = (self.key, self.reverse);
 
-        dispatch!(inputs.format(), entry, axis, |collection, size, name| {
-            let sorted = collection.sort_by(|a, b| {
-                let ordering = match key {
-                    // a record with no name orders before
-                    // every named one, because None < Some
-                    // -- and the alternative, dropping it,
-                    // would make sort lose records
-                    Key::Name => name(a).cmp(&name(b)),
-                    Key::Size => size(a).cmp(&size(b)),
-                };
+        dispatch!(
+            inputs.format(),
+            entry,
+            axis,
+            |collection, size, name, write| {
+                let sorted = collection.sort_by(|a, b| {
+                    let ordering = match key {
+                        // a record with no name orders before
+                        // every named one, because None < Some
+                        // -- and the alternative, dropping it,
+                        // would make sort lose records
+                        Key::Name => name(a).cmp(&name(b)),
+                        Key::Size => size(a).cmp(&size(b)),
+                    };
 
-                if reverse {
-                    ordering.reverse()
-                } else {
-                    ordering
-                }
-            });
+                    if reverse {
+                        ordering.reverse()
+                    } else {
+                        ordering
+                    }
+                });
 
-            emit(sorted.iter(), out)
-        })
+                emit(sorted.iter(), write, out)
+            }
+        )
     }
 }

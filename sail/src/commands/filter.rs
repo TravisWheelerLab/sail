@@ -2,11 +2,16 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 use clap::Args;
-use libsail::collection::Iterable;
+use std::io::Write;
 
-use crate::cli::{Axis, FormatArg};
-use crate::input::{Inputs, axis_for, dispatch};
-use crate::output::{emit, writer};
+use libsail::collection::Iterable;
+use libsail::index::Reader;
+
+use crate::cli::{Axis, FormatArg, ReadArgs};
+use crate::input::{
+    Backend, Inputs, Needs, axis_for, dispatch, indexed, indexed_path, size_framed,
+};
+use crate::output::{emit, put, writer};
 
 #[derive(Args)]
 pub struct FilterArgs {
@@ -37,11 +42,18 @@ pub struct FilterArgs {
     /// write the records that did not survive here
     #[arg(long)]
     pub rest: Option<PathBuf>,
+
+    /// re-wrap the records written out, rather than copying their bytes through
+    #[arg(long)]
+    pub rewrap: bool,
+
+    #[command(flatten)]
+    pub read: ReadArgs,
 }
 
 impl FilterArgs {
     pub fn run(self) -> Result<()> {
-        let inputs = Inputs::read(&self.input, self.format)?;
+        let inputs = Inputs::plan(&self.input, self.format, self.read, Needs::Pass)?;
         let axis = axis_for(inputs.format(), self.by)?;
 
         let (min, max) = (self.min.unwrap_or(0), self.max.unwrap_or(usize::MAX));
@@ -51,20 +63,69 @@ impl FilterArgs {
             None => None,
         };
 
-        for entry in inputs.entries() {
-            dispatch!(inputs.format(), entry, axis, |collection, size, _name| {
-                // one pass with a partition rather than two
-                // filters, so --rest cannot disagree with the
-                // kept side about where the boundary is
-                let (keep, drop): (Vec<_>, Vec<_>) = collection
-                    .iter()
-                    .partition(|r| (min..=max).contains(&size(r)));
+        let format = inputs.format();
+        let rewrap = self.rewrap;
 
-                emit(keep, &mut kept)?;
-                if let Some(rest) = &mut rest {
-                    emit(drop, rest)?;
+        // one predicate and one write per record, so --rest
+        // cannot disagree with the kept side about where the
+        // boundary is
+        let sort_one = |record: &[u8],
+                        kept: &mut dyn Write,
+                        rest: &mut Option<Box<dyn Write>>|
+         -> Result<()> {
+            let size = size_framed(format, record, axis)?;
+
+            match ((min..=max).contains(&size), rest) {
+                (true, _) => put(format, record, rewrap, kept)?,
+                (false, Some(rest)) => put(format, record, rewrap, rest)?,
+                (false, None) => {}
+            }
+
+            Ok(())
+        };
+
+        for entry in inputs.entries() {
+            match inputs.backend() {
+                Backend::Stream => {
+                    let mut reader = Reader::new(entry.reader()?, inputs.format());
+
+                    while reader.advance()? {
+                        sort_one(reader.record(), &mut kept, &mut rest)?;
+                    }
                 }
-            });
+                Backend::Indexed => {
+                    let path = indexed_path(entry)?;
+
+                    indexed!(inputs.format(), path, |collection| {
+                        for n in 0..collection.index().len() {
+                            let record = collection.record(n)?.expect("a counted record");
+
+                            sort_one(&record, &mut kept, &mut rest)?;
+                        }
+                    });
+                }
+                Backend::Memory => {
+                    dispatch!(
+                        inputs.format(),
+                        entry,
+                        axis,
+                        |collection, size, _name, write| {
+                            // one pass with a partition rather
+                            // than two filters, so --rest
+                            // cannot disagree with the kept
+                            // side about where the boundary is
+                            let (keep, drop): (Vec<_>, Vec<_>) = collection
+                                .iter()
+                                .partition(|r| (min..=max).contains(&size(r)));
+
+                            emit(keep, write, &mut kept)?;
+                            if let Some(rest) = &mut rest {
+                                emit(drop, write, rest)?;
+                            }
+                        }
+                    );
+                }
+            }
         }
 
         Ok(())

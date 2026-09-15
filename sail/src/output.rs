@@ -1,11 +1,12 @@
 //! Where an operation writes its records.
 
-use std::fmt::Display;
+use std::borrow::Borrow;
 use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::path::Path;
 
 use anyhow::{Context, Result};
+use libsail::format::Format;
 
 /// A stream for `path`, or stdout for `None` and for `-`.
 pub fn writer(path: Option<&Path>) -> Result<Box<dyn Write>> {
@@ -18,17 +19,33 @@ pub fn writer(path: Option<&Path>) -> Result<Box<dyn Write>> {
     Ok(Box::new(BufWriter::new(file)))
 }
 
+/// How one format puts a record on a stream.
+//
+// a fn pointer rather than a trait: the three write_to
+// methods take different arguments, FASTA's a line width
+// and the other two none, so there is no one signature to
+// put in a trait method
+pub type Writer<R> = fn(&R, &mut dyn Write) -> libsail::Result<()>;
+
 /// Write `records` through their own format's writer.
 ///
 /// Takes an iterator rather than a collection, so a run of records selected by
 /// position reaches the same writer a whole collection does.
-pub fn emit<W: Write>(records: impl IntoIterator<Item = impl Display>, mut out: W) -> Result<()> {
-    // Display rather than write_to, so this is one function
-    // over all three formats. what it gives up is FASTA's
-    // line width, which B6 will need and no table A
-    // operation does
+pub fn emit<R, B, W>(
+    records: impl IntoIterator<Item = B>,
+    write: Writer<R>,
+    mut out: W,
+) -> Result<()>
+where
+    B: Borrow<R>,
+    W: Write,
+{
     for record in records {
-        write!(out, "{record}")?;
+        // write_to rather than Display: a Formatter takes
+        // &str, so Display cannot carry a record whose name
+        // is not utf-8, and a Display that fails panics out
+        // of write! instead of returning the error
+        write(record.borrow(), &mut out)?;
     }
 
     out.flush()?;
@@ -37,6 +54,39 @@ pub fn emit<W: Write>(records: impl IntoIterator<Item = impl Display>, mut out: 
 }
 
 // ---
+
+/// Write one framed record the way its format's writer writes the parsed
+/// record.
+pub fn write_framed(format: Format, record: &[u8], w: &mut dyn Write) -> Result<()> {
+    use libsail::parse::Parse;
+    use libsail::seq::fasta::DEFAULT_LINE_WIDTH;
+    use libsail::seq::p7hmm::HmmParser;
+    use libsail::seq::stockholm::StockholmParser;
+
+    match format {
+        // rewrap writes the same bytes write_to does, without
+        // building the record to write them from
+        Format::Fasta => libsail::seq::fasta::rewrap(record, w, DEFAULT_LINE_WIDTH),
+        Format::Stockholm => write::stockholm(&StockholmParser::parse(record)?, w),
+        Format::Hmm => write::hmm(&HmmParser::parse(record)?, w),
+    }?;
+
+    Ok(())
+}
+
+/// Write one framed record, as it came or re-wrapped.
+pub fn put(format: Format, record: &[u8], rewrap: bool, w: &mut dyn Write) -> Result<()> {
+    if rewrap {
+        write_framed(format, record, w)
+    } else {
+        // the input's own bytes, parsed by nothing: an
+        // operation that only selected this record has
+        // nothing to say about how it was wrapped
+        w.write_all(record)?;
+
+        Ok(())
+    }
+}
 
 /// A record's NAME, which each format spells differently.
 //
@@ -64,6 +114,27 @@ pub mod name {
     }
 }
 
+/// A record put on a stream, which each format spells differently.
+pub mod write {
+    use std::io::Write;
+
+    use libsail::seq::fasta::{DEFAULT_LINE_WIDTH, FastaRecord};
+    use libsail::seq::p7hmm::HmmRecord;
+    use libsail::seq::stockholm::StockholmRecord;
+
+    pub fn fasta(record: &FastaRecord, w: &mut dyn Write) -> libsail::Result<()> {
+        record.write_to(w, DEFAULT_LINE_WIDTH)
+    }
+
+    pub fn stockholm(record: &StockholmRecord, w: &mut dyn Write) -> libsail::Result<()> {
+        record.write_to(w)
+    }
+
+    pub fn hmm(record: &HmmRecord, w: &mut dyn Write) -> libsail::Result<()> {
+        record.write_to(w)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use libsail::collection::{Indexable, Iterable};
@@ -80,7 +151,7 @@ mod tests {
         let fasta = Fasta::new(&text[..]).unwrap();
 
         let mut out = Vec::new();
-        emit(fasta.iter(), &mut out).unwrap();
+        emit(fasta.iter(), super::write::fasta, &mut out).unwrap();
 
         let back = Fasta::new(&out[..]).unwrap();
         assert_eq!(back.len(), 2);

@@ -1,0 +1,61 @@
+# STOCKHOLM 1.0
+#=GF ID PDZ
+#=GF AC PF00595.30
+#=GF DE PDZ domain
+#=GF AU Bateman A;0000-0002-6982-4660
+#=GF SE [1]
+#=GF GA 23.20 23.20;
+#=GF TC 23.20 23.20;
+#=GF NC 23.10 23.10;
+#=GF BM hmmbuild  HMM.ann SEED.ann
+#=GF SM hmmsearch --cpu 8 -Z 90746521 -E 1000 HMM pfamseq
+#=GF TP Domain
+#=GF WK PDZ_domain
+#=GF CL CL0466
+#=GF RC Review article
+#=GF RN [1]
+#=GF RM 9204764
+#=GF RT PDZ domains: targeting signalling molecules to sub-membranous
+#=GF RT sites.
+#=GF RA Ponting CP, Phillips C, Davies KE, Blake DJ
+#=GF RL Bioessays 1997;19:469-479.
+#=GF RN [2]
+#=GF RM 8674113
+#=GF RT Crystal structures of a complexed and peptide-free membrane
+#=GF RT protein-binding domain: molecular basis of peptide recognition
+#=GF RT by PDZ.
+#=GF RA Doyle DA, Lee A, Lewis J, Kim E, Sheng M, MacKinnon R;
+#=GF RL Cell. 1996;85:1067-1076.
+#=GF RC Extension of PDZ family
+#=GF RN [3]
+#=GF RM 9041651
+#=GF RT Evidence for PDZ domains in bacteria, yeast, and plants.
+#=GF RA Ponting CP;
+#=GF RL Protein Sci 1997;6:464-468.
+#=GF RN [4]
+#=GF RM 19738200
+#=GF RT Rapid evolution of functional complexity in a domain family.
+#=GF RA Ernst A, Sazinsky SL, Hui S, Currell B, Dharsee M, Seshagiri S,
+#=GF RA Bader GD, Sidhu SS;
+#=GF RL Sci Signal. 2009;2:ra50.
+#=GF DR INTERPRO; IPR001478;
+#=GF DR SCOP; s040; sf;
+#=GF DC Coordinates are not yet available
+#=GF DR HOMSTRAD; PDZ;
+#=GF DR SO; 0000417; polypeptide_domain;
+#=GF CC PDZ domains are found in diverse signaling proteins.
+#=GF SQ 6
+#=GS LIMK1_HUMAN/165-255 AC P53667.3
+#=GS LIMK2_CHICK/152-236 AC P53666.1
+#=GS LIMK2_RAT/152-236 AC P53670.1
+#=GS CTPA_PICP2/102-182 AC P42784.2
+#=GS PRC_HAEIN/244-328 AC P45306.1
+#=GS PRC_ECOLI/238-320 AC P23865.2
+LIMK1_HUMAN/165-255 LVSIPAS..SHGKRGLSVSIDPPHGPPGC...GTEHSHTVRVQGVDPG.CMSPDVKNSIHVGDRILEI..NG.....TPIRNV.PLDEIDLLIQETSR.....LLQLTLE
+LIMK2_CHICK/152-236 LISMPAA..TDGKRGFSVSVEGGCSS.........YATGVQVKEVNRM.HISPDVRNAIHPADRILEI..NG.....APIRTL.QVEEVEDLIRKTSQ.....TLQLLIE
+LIMK2_RAT/152-236 LISMPAT..TECRRGFSVSVESASSN.........YATTVQVKEVNRM.HISPNNRNAIHPGDRILEI..NG.....TPVRTL.RVEEVEDAINQTSQ.....TLQLLIE
+CTPA_PICP2/102-182 SLKVSTS.GELSGVGLQINVNPEV.............DVLEVILPLPG..SPAEAAG.IEAKDQILAI..DG.....IDTRNI.GLEEAAARMRGKKG....STVSLTVK
+PRC_HAEIN/244-328 SFNESIN.LSLEGIGTTLQSEDD...............EISIKSLVPG..APAERSKKLHPGDKIIGV..GQATGDIEDVVGW.RLEDLVEKIKGKKG....TKVRLEIE
+PRC_ECOLI/238-320 NTEMSL...SLEGIGAVLQMDDD...............YTVINSMVAG..GPAAKSKAISVGDKIVGV..GQTGKPMVDVIGW.RLDDVVALIKGPKG....SKVRLEIL
+#=GC seq_cons plphpt...tptthGhslssssst..............slhlsclhtG..uuAptss.lphGDpIlpl..NG.....pslssh.spppshthl+sssp.....plpLtlh
+//

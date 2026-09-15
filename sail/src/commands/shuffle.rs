@@ -36,13 +36,13 @@ impl ShuffleArgs {
         let out = writer(self.output.as_deref())?;
         let seed = self.seed;
 
-        dispatch!(inputs.format(), entry, |collection| {
+        dispatch!(inputs.format(), entry, |collection, _size, _name, write| {
             let mut rng = match seed {
                 Some(seed) => StdRng::seed_from_u64(seed),
                 None => StdRng::from_rng(&mut rand::rng()),
             };
 
-            emit(collection.permute_with(&mut rng).iter(), out)
+            emit(collection.permute_with(&mut rng).iter(), write, out)
         })
     }
 }

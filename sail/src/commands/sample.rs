@@ -44,7 +44,7 @@ impl SampleArgs {
         let out = writer(self.output.as_deref())?;
         let (count, fraction, seed) = (self.count, self.fraction, self.seed);
 
-        dispatch!(inputs.format(), entry, |collection| {
+        dispatch!(inputs.format(), entry, |collection, _size, _name, write| {
             let n = draw_size(count, fraction, collection.len())?;
 
             // sample_with rather than sample, always: the
@@ -58,7 +58,7 @@ impl SampleArgs {
                 None => StdRng::from_rng(&mut rand::rng()),
             };
 
-            emit(collection.sample_with(&mut rng, n).iter(), out)
+            emit(collection.sample_with(&mut rng, n).iter(), write, out)
         })
     }
 }

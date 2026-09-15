@@ -2,12 +2,15 @@ use std::path::PathBuf;
 
 use anyhow::{Context, Result};
 use clap::Args;
+use std::io::Write;
+
 use libsail::collection::Iterable;
+use libsail::index::Reader;
 use regex::bytes::Regex;
 
-use crate::cli::FormatArg;
-use crate::input::{Inputs, dispatch};
-use crate::output::{emit, writer};
+use crate::cli::{FormatArg, ReadArgs};
+use crate::input::{Backend, Inputs, Needs, dispatch, indexed, indexed_path};
+use crate::output::{emit, put, writer};
 
 #[derive(Args)]
 pub struct GrepArgs {
@@ -37,26 +40,69 @@ pub struct GrepArgs {
     /// ignore case
     #[arg(short = 'i', long)]
     pub ignore_case: bool,
+
+    /// re-wrap the records written out, rather than copying their bytes through
+    #[arg(long)]
+    pub rewrap: bool,
+
+    #[command(flatten)]
+    pub read: ReadArgs,
 }
 
 impl GrepArgs {
     pub fn run(self) -> Result<()> {
-        let inputs = Inputs::read(&self.input, self.format)?;
+        let inputs = Inputs::plan(&self.input, self.format, self.read, Needs::Pass)?;
         let pattern = self.pattern()?;
         let invert = self.invert;
         let mut out = writer(self.output.as_deref())?;
 
-        for entry in inputs.entries() {
-            dispatch!(inputs.format(), entry, |collection, _size, name| {
-                let kept = collection
-                    .iter()
-                    // a record with no name matches nothing,
-                    // so inverting keeps it: it is not one of
-                    // the records the pattern found
-                    .filter(|r| name(r).is_some_and(|n| pattern.is_match(n)) != invert);
+        let keep = |record: &[u8], out: &mut dyn Write| -> Result<()> {
+            let found =
+                libsail::seq::name_of(inputs.format(), record).is_some_and(|n| pattern.is_match(n));
 
-                emit(kept, &mut out)?;
-            });
+            // a record with no name matches nothing, so
+            // inverting keeps it: it is not one of the
+            // records the pattern found
+            if found != invert {
+                put(inputs.format(), record, self.rewrap, out)?;
+            }
+
+            Ok(())
+        };
+
+        for entry in inputs.entries() {
+            match inputs.backend() {
+                // the name borrows out of the reader's buffer
+                // and the record that goes out is the same
+                // bytes, so a match costs a regex and a write
+                Backend::Stream => {
+                    let mut reader = Reader::new(entry.reader()?, inputs.format());
+
+                    while reader.advance()? {
+                        keep(reader.record(), &mut out)?;
+                    }
+                }
+                Backend::Indexed => {
+                    let path = indexed_path(entry)?;
+
+                    indexed!(inputs.format(), path, |collection| {
+                        for n in 0..collection.index().len() {
+                            let record = collection.record(n)?.expect("a counted record");
+
+                            keep(&record, &mut out)?;
+                        }
+                    });
+                }
+                Backend::Memory => {
+                    dispatch!(inputs.format(), entry, |collection, _size, name, write| {
+                        let kept = collection
+                            .iter()
+                            .filter(|r| name(r).is_some_and(|n| pattern.is_match(n)) != invert);
+
+                        emit(kept, write, &mut out)?;
+                    });
+                }
+            }
         }
 
         Ok(())
@@ -84,6 +130,8 @@ mod tests {
 
     fn args(pattern: &str) -> GrepArgs {
         GrepArgs {
+            read: crate::cli::ReadArgs::default(),
+            rewrap: false,
             pattern: pattern.to_string(),
             input: Vec::new(),
             format: None,

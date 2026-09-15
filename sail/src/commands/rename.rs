@@ -58,7 +58,7 @@ impl RenameArgs {
         // a Vec<u8> field, a #=GF line, and a header string
         match inputs.format() {
             Format::Fasta => {
-                let collection = libsail::seq::fasta::Fasta::new(entry.bytes())?;
+                let collection = libsail::seq::fasta::Fasta::new(entry.reader()?)?;
                 let renamed = (0..collection.len())
                     .map(|n| {
                         let mut record = collection.cloned(n).expect("a counted record");
@@ -68,11 +68,11 @@ impl RenameArgs {
                     })
                     .collect::<Vec<_>>();
 
-                emit(renamed, out)
+                emit(renamed, crate::output::write::fasta, out)
             }
 
             Format::Stockholm => {
-                let collection = libsail::seq::stockholm::Stockholm::new(entry.bytes())?;
+                let collection = libsail::seq::stockholm::Stockholm::new(entry.reader()?)?;
                 let renamed = (0..collection.len())
                     .map(|n| {
                         let mut record = collection.cloned(n).expect("a counted record");
@@ -85,11 +85,11 @@ impl RenameArgs {
                     })
                     .collect::<Result<Vec<_>>>()?;
 
-                emit(renamed, out)
+                emit(renamed, crate::output::write::stockholm, out)
             }
 
             Format::Hmm => {
-                let collection = libsail::seq::p7hmm::Hmm::new(entry.bytes())?;
+                let collection = libsail::seq::p7hmm::Hmm::new(entry.reader()?)?;
                 let renamed = (0..collection.len())
                     .map(|n| {
                         let mut record = collection.cloned(n).expect("a counted record");
@@ -103,7 +103,7 @@ impl RenameArgs {
                     })
                     .collect::<Result<Vec<_>>>()?;
 
-                emit(renamed, out)
+                emit(renamed, crate::output::write::hmm, out)
             }
         }
     }

@@ -2,11 +2,14 @@ use std::path::PathBuf;
 
 use anyhow::{Context, Result, bail};
 use clap::Args;
-use libsail::collection::Indexable;
+use std::io::Write;
 
-use crate::cli::FormatArg;
-use crate::input::{Inputs, dispatch};
-use crate::output::{emit, writer};
+use libsail::collection::Indexable;
+use libsail::index::Reader;
+
+use crate::cli::{FormatArg, ReadArgs};
+use crate::input::{Backend, Inputs, Needs, dispatch, indexed, indexed_path};
+use crate::output::{emit, write_framed, writer};
 
 #[derive(Args)]
 pub struct GetArgs {
@@ -24,11 +27,19 @@ pub struct GetArgs {
     /// where to write [default: stdout]
     #[arg(short, long)]
     pub output: Option<PathBuf>,
+
+    #[command(flatten)]
+    pub read: ReadArgs,
 }
 
 impl GetArgs {
     pub fn run(self) -> Result<()> {
-        let inputs = Inputs::read(std::slice::from_ref(&self.input), self.format)?;
+        let inputs = Inputs::plan(
+            std::slice::from_ref(&self.input),
+            self.format,
+            self.read,
+            Needs::Sparse,
+        )?;
         let entry = &inputs.entries()[0];
         let out = writer(self.output.as_deref())?;
 
@@ -38,11 +49,85 @@ impl GetArgs {
             .map(|spec| parse_span(spec))
             .collect::<Result<Vec<_>>>()?;
 
-        dispatch!(inputs.format(), entry, |collection| {
-            let picked = pick(&collection, &wanted)?;
+        match inputs.backend() {
+            Backend::Indexed => {
+                let path = indexed_path(entry)?;
+                let mut out = out;
 
-            emit(picked, out)
-        })
+                indexed!(inputs.format(), path, |collection| {
+                    let held = collection.index().len();
+
+                    for &(_first, last) in &wanted {
+                        if last > held {
+                            bail!(
+                                "position {last} was asked for and the input holds {held} records"
+                            )
+                        }
+                    }
+
+                    // only the positions asked for are read:
+                    // `get 2000000` reads one record rather
+                    // than two million
+                    for &(first, last) in &wanted {
+                        for at in first..=last {
+                            let record = collection.record(at - 1)?.expect("a counted record");
+
+                            write_framed(inputs.format(), &record, &mut out)?;
+                        }
+                    }
+                });
+                out.flush()?;
+
+                Ok(())
+            }
+            Backend::Stream => {
+                // held rather than written as they are found,
+                // so a position past the end is reported the
+                // way the in-memory path reports it: nothing
+                // written, then the error
+                let last = wanted.iter().map(|&(_, last)| last).max().unwrap_or(0);
+                let mut held: Vec<Option<Vec<u8>>> = vec![None; last];
+
+                let mut reader = Reader::new(entry.reader()?, inputs.format());
+                let mut n = 0;
+
+                while n < last && reader.advance()? {
+                    // only the positions asked for are kept,
+                    // so this is O(what was asked) and not
+                    // O(how far into the file it sits)
+                    if wanted.iter().any(|&(f, l)| n + 1 >= f && n < l) {
+                        held[n] = Some(reader.record().to_vec());
+                    }
+
+                    n += 1;
+                }
+
+                if n < last {
+                    bail!("position {last} was asked for and the input holds {n} records")
+                }
+
+                let mut out = out;
+                for &(first, last) in &wanted {
+                    for at in first..=last {
+                        let record = held[at - 1]
+                            .as_ref()
+                            .expect("a position inside a span was kept");
+
+                        write_framed(inputs.format(), record, &mut out)?;
+                    }
+                }
+                out.flush()?;
+
+                Ok(())
+            }
+            Backend::Memory => {
+                dispatch!(inputs.format(), entry, |collection, _size, _name, write| {
+                    let picked = pick(&collection, &wanted)?;
+
+                    emit(picked, write, out)
+                })
+            }
+        }
     }
 }
 

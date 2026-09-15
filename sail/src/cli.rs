@@ -136,6 +136,48 @@ impl From<FormatArg> for Format {
     }
 }
 
+/// How an operation reads its input.
+#[derive(clap::Args, Clone, Copy, Debug, Default)]
+#[command(next_help_heading = "Input")]
+pub struct ReadArgs {
+    /// stream the input, hold it in memory, or address it on disk
+    //
+    // one value enum rather than --stream/--indexed
+    // booleans: booleans need a conflicts_with for every
+    // pair, and their help never says which one is the
+    // default
+    #[arg(long = "read", value_enum, default_value_t, value_name = "MODE")]
+    pub mode: Mode,
+}
+
+/// A read backend as named on the command line.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, ValueEnum)]
+pub enum Mode {
+    /// let the operation pick: streaming unless it needs a record count or a
+    /// few records by name, and never indexed on stdin
+    //
+    // the one Mode that is not an input::Backend, the same
+    // split FormatArg makes against libsail's Format
+    #[default]
+    Auto,
+    /// one forward pass, one record at a time, in a reused buffer
+    Stream,
+    /// parse every record into memory before doing anything
+    Memory,
+    /// keep a byte offset per record and read one on demand
+    Indexed,
+}
+
+/// What order `fetch` writes the records it found.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, ValueEnum)]
+pub enum Order {
+    /// the order the input holds them
+    #[default]
+    File,
+    /// the order the names were asked for
+    Asked,
+}
+
 /// Which of an alignment's two axes `--by` names.
 //
 // only Stockholm has two: a FASTA record's size is its

@@ -3,9 +3,10 @@ use std::path::PathBuf;
 use anyhow::Result;
 use clap::Args;
 use libsail::collection::Indexable;
+use libsail::index::{Index, Reader};
 
-use crate::cli::FormatArg;
-use crate::input::{Inputs, dispatch};
+use crate::cli::{FormatArg, ReadArgs};
+use crate::input::{Backend, Inputs, Needs, dispatch};
 
 #[derive(Args)]
 pub struct CountArgs {
@@ -16,6 +17,9 @@ pub struct CountArgs {
     /// assert the input is this format, and fail if it is not
     #[arg(long, value_enum)]
     pub format: Option<FormatArg>,
+
+    #[command(flatten)]
+    pub read: ReadArgs,
 }
 
 impl CountArgs {
@@ -29,14 +33,30 @@ impl CountArgs {
 
     /// One line per input, and a total when there is more than one.
     fn counts(&self) -> Result<Vec<String>> {
-        let inputs = Inputs::read(&self.input, self.format)?;
+        let inputs = Inputs::plan(&self.input, self.format, self.read, Needs::Pass)?;
         let several = inputs.entries().len() > 1;
 
         let mut lines = Vec::new();
         let mut total = 0;
 
         for entry in inputs.entries() {
-            let n = dispatch!(inputs.format(), entry, |collection| collection.len());
+            let n = match inputs.backend() {
+                // nothing is parsed: the frames are counted
+                // and the bytes of each are dropped as the
+                // next one overwrites them
+                Backend::Stream => {
+                    let mut reader = Reader::new(entry.reader()?, inputs.format());
+                    let mut n = 0;
+
+                    while reader.advance()? {
+                        n += 1;
+                    }
+
+                    n
+                }
+                Backend::Indexed => Index::build(entry.reader()?, inputs.format())?.len(),
+                Backend::Memory => dispatch!(inputs.format(), entry, |collection| collection.len()),
+            };
             total += n;
 
             if several {
@@ -70,6 +90,7 @@ mod tests {
         CountArgs {
             input: paths.to_vec(),
             format,
+            read: ReadArgs::default(),
         }
         .counts()
     }

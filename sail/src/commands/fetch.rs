@@ -1,13 +1,14 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
 use anyhow::{Context, Result, bail};
 use clap::Args;
 use libsail::collection::{Indexable, Iterable};
+use libsail::index::Reader;
 
-use crate::cli::FormatArg;
-use crate::input::{Inputs, dispatch};
-use crate::output::{emit, writer};
+use crate::cli::{FormatArg, Order, ReadArgs};
+use crate::input::{Backend, Inputs, Needs, dispatch};
+use crate::output::{emit, put, writer};
 
 #[derive(Args)]
 pub struct FetchArgs {
@@ -32,6 +33,17 @@ pub struct FetchArgs {
     /// skip a name the input does not hold, rather than failing
     #[arg(long)]
     pub skip_missing: bool,
+
+    /// write the records in file order, or in the order the names were asked for
+    #[arg(long, value_enum, default_value_t)]
+    pub order: Order,
+
+    /// re-wrap the records written out, rather than copying their bytes through
+    #[arg(long)]
+    pub rewrap: bool,
+
+    #[command(flatten)]
+    pub read: ReadArgs,
 }
 
 impl FetchArgs {
@@ -41,12 +53,76 @@ impl FetchArgs {
             bail!("fetch needs at least one name, on the command line or through -f");
         }
 
-        let inputs = Inputs::read(std::slice::from_ref(&self.input), self.format)?;
+        let inputs = Inputs::plan(
+            std::slice::from_ref(&self.input),
+            self.format,
+            self.read,
+            Needs::Pass,
+        )?;
         let entry = &inputs.entries()[0];
-        let out = writer(self.output.as_deref())?;
+        let mut out = writer(self.output.as_deref())?;
         let skip_missing = self.skip_missing;
 
-        dispatch!(inputs.format(), entry, |collection, _size, name| {
+        if inputs.backend() != Backend::Memory {
+            let format = inputs.format();
+            let want: HashSet<&[u8]> = wanted.iter().map(Vec::as_slice).collect();
+
+            // found stays empty under --order file, where a
+            // record is written as the pass reaches it
+            let mut found: HashMap<&[u8], Vec<u8>> = HashMap::new();
+            let mut hit: HashSet<&[u8]> = HashSet::with_capacity(want.len());
+
+            let mut reader = Reader::new(entry.reader()?, format);
+            while reader.advance()? {
+                let record = reader.record();
+                let Some(name) = libsail::seq::name_of(format, record) else {
+                    continue;
+                };
+                let Some(&asked) = want.get(name) else {
+                    continue;
+                };
+
+                // keep the first of a repeated name, which is
+                // what the in-memory path returns
+                if !hit.insert(asked) {
+                    continue;
+                }
+
+                match self.order {
+                    Order::File => put(format, record, self.rewrap, &mut out)?,
+                    Order::Asked => {
+                        found.insert(asked, record.to_vec());
+                    }
+                }
+            }
+
+            for name in &wanted {
+                if hit.contains(name.as_slice()) {
+                    continue;
+                }
+                if !skip_missing {
+                    bail!(
+                        "{} holds no record named {:?}",
+                        entry.name(),
+                        String::from_utf8_lossy(name)
+                    )
+                }
+            }
+
+            if self.order == Order::Asked {
+                for name in &wanted {
+                    if let Some(record) = found.get(name.as_slice()) {
+                        put(format, record, self.rewrap, &mut out)?;
+                    }
+                }
+            }
+
+            out.flush()?;
+
+            return Ok(());
+        }
+
+        dispatch!(inputs.format(), entry, |collection, _size, name, write| {
             let mut at: HashMap<&[u8], usize> = HashMap::with_capacity(collection.len());
             for (n, record) in collection.iter().enumerate() {
                 if let Some(found) = name(record) {
@@ -75,7 +151,7 @@ impl FetchArgs {
                 }
             }
 
-            emit(picked, out)
+            emit(picked, write, &mut out)
         })
     }
 
@@ -119,6 +195,9 @@ mod tests {
             format: None,
             output: None,
             skip_missing: false,
+            order: Order::default(),
+            rewrap: false,
+            read: ReadArgs::default(),
         }
     }
 

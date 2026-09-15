@@ -3,9 +3,12 @@ use std::path::PathBuf;
 use anyhow::Result;
 use clap::Args;
 use libsail::collection::Iterable;
+use libsail::index::Reader;
 
-use crate::cli::{Axis, FormatArg};
-use crate::input::{Inputs, axis_for, dispatch};
+use crate::cli::{Axis, FormatArg, ReadArgs};
+use crate::input::{
+    Backend, Inputs, Needs, axis_for, dispatch, indexed, indexed_path, size_framed,
+};
 
 #[derive(Args)]
 pub struct StatsArgs {
@@ -20,6 +23,9 @@ pub struct StatsArgs {
     /// for an alignment, measure rows or columns [default: depth]
     #[arg(long, value_enum)]
     pub by: Option<Axis>,
+
+    #[command(flatten)]
+    pub read: ReadArgs,
 }
 
 impl StatsArgs {
@@ -33,7 +39,7 @@ impl StatsArgs {
 
     /// One `key<TAB>value` line per statistic, over every input together.
     fn report(&self) -> Result<Vec<String>> {
-        let inputs = Inputs::read(&self.input, self.format)?;
+        let inputs = Inputs::plan(&self.input, self.format, self.read, Needs::Pass)?;
         let axis = axis_for(inputs.format(), self.by)?;
 
         // every size, so the order statistics can be read off
@@ -41,9 +47,37 @@ impl StatsArgs {
         // record against a file already held whole
         let mut sizes = Vec::new();
         for entry in inputs.entries() {
-            dispatch!(inputs.format(), entry, axis, |collection, size, _name| {
-                sizes.extend(collection.iter().map(size))
-            });
+            match inputs.backend() {
+                // a usize per record and never the record: a
+                // FASTA length is counted off the framed
+                // bytes, so the residues are never built
+                Backend::Stream => {
+                    let mut reader = Reader::new(entry.reader()?, inputs.format());
+
+                    while reader.advance()? {
+                        sizes.push(size_framed(inputs.format(), reader.record(), axis)?);
+                    }
+                }
+                Backend::Indexed => {
+                    let path = indexed_path(entry)?;
+
+                    indexed!(inputs.format(), path, |collection| {
+                        for n in 0..collection.index().len() {
+                            let record = collection.record(n)?.expect("a counted record");
+
+                            sizes.push(size_framed(inputs.format(), &record, axis)?);
+                        }
+                    });
+                }
+                Backend::Memory => {
+                    dispatch!(
+                        inputs.format(),
+                        entry,
+                        axis,
+                        |collection, size, _name, _write| sizes.extend(collection.iter().map(size))
+                    );
+                }
+            }
         }
 
         Ok(summarise(
@@ -137,6 +171,7 @@ mod tests {
 
     fn stats(paths: &[PathBuf], by: Option<Axis>) -> Result<Vec<String>> {
         StatsArgs {
+            read: ReadArgs::default(),
             input: paths.to_vec(),
             format: None,
             by,

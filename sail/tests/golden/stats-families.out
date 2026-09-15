@@ -1,0 +1,10 @@
+format	stockholm
+measured	depth
+records	2
+total	12
+min	6
+q1	6
+median	6
+q3	6
+max	6
+mean	6.0

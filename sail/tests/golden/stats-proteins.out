@@ -1,0 +1,9 @@
+format	fasta
+records	5
+total	2335
+min	228
+q1	358
+median	499
+q3	526
+max	724
+mean	467.0

@@ -4,9 +4,10 @@ use std::path::PathBuf;
 use anyhow::Result;
 use clap::Args;
 use libsail::collection::Iterable;
+use libsail::index::{Index, Reader};
 
-use crate::cli::FormatArg;
-use crate::input::{Inputs, dispatch};
+use crate::cli::{FormatArg, ReadArgs};
+use crate::input::{Backend, Inputs, Needs, dispatch};
 use crate::output::writer;
 
 #[derive(Args)]
@@ -26,16 +27,15 @@ pub struct NamesArgs {
     /// print a blank line for a record with no name, rather than skipping it
     #[arg(long)]
     pub keep_unnamed: bool,
+
+    #[command(flatten)]
+    pub read: ReadArgs,
 }
 
 impl NamesArgs {
     pub fn run(self) -> Result<()> {
         let mut out = writer(self.output.as_deref())?;
-
-        for line in self.names()? {
-            out.write_all(&line)?;
-            out.write_all(b"\n")?;
-        }
+        self.write_names(&mut out)?;
         out.flush()?;
 
         Ok(())
@@ -46,28 +46,61 @@ impl NamesArgs {
     // bytes rather than String: a FASTA name is not required
     // to be utf-8, and decoding here would make an ordinary
     // latin-1 header unprintable
-    fn names(&self) -> Result<Vec<Vec<u8>>> {
-        let inputs = Inputs::read(&self.input, self.format)?;
-        let mut names = Vec::new();
+    fn write_names(&self, out: &mut dyn Write) -> Result<()> {
+        let inputs = Inputs::plan(&self.input, self.format, self.read, Needs::Pass)?;
 
         for entry in inputs.entries() {
-            dispatch!(inputs.format(), entry, |collection, _size, name| {
-                for record in collection.iter() {
-                    match name(record) {
-                        Some(found) => names.push(found.to_vec()),
+            // written as they are found rather than
+            // collected: a name is a handful of bytes, but
+            // there is one per record, and holding them all
+            // is holding something the size of the input
+            let push = |found: Option<&[u8]>, out: &mut dyn Write| -> Result<()> {
+                match found {
+                    Some(found) => {
+                        out.write_all(found)?;
+                        out.write_all(b"\n")?;
+                    }
 
-                        // an alignment need not carry a #=GF
-                        // ID, and an empty line for it would
-                        // silently shift every name after it
-                        // out of step with its record
-                        None if self.keep_unnamed => names.push(Vec::new()),
-                        None => {}
+                    // an alignment need not carry a #=GF ID,
+                    // and an empty line for it would silently
+                    // shift every name after it out of step
+                    // with its record
+                    None if self.keep_unnamed => out.write_all(b"\n")?,
+                    None => {}
+                }
+
+                Ok(())
+            };
+
+            match inputs.backend() {
+                // the name is a slice of the reader's buffer,
+                // so nothing but the name itself is built --
+                // no record, and none of its residues
+                Backend::Stream => {
+                    let mut reader = Reader::new(entry.reader()?, inputs.format());
+
+                    while reader.advance()? {
+                        push(libsail::seq::name_of(inputs.format(), reader.record()), out)?;
                     }
                 }
-            });
+                Backend::Indexed => {
+                    let index = Index::build_named(entry.reader()?, inputs.format())?;
+
+                    for n in 0..index.len() {
+                        push(index.name(n), out)?;
+                    }
+                }
+                Backend::Memory => {
+                    dispatch!(inputs.format(), entry, |collection, _size, name, _write| {
+                        for record in collection.iter() {
+                            push(name(record), out)?;
+                        }
+                    });
+                }
+            }
         }
 
-        Ok(names)
+        Ok(())
     }
 }
 
@@ -84,16 +117,28 @@ mod tests {
     }
 
     fn names(paths: &[PathBuf], keep_unnamed: bool) -> Result<Vec<String>> {
-        Ok(NamesArgs {
+        let mut out = Vec::new();
+
+        NamesArgs {
             input: paths.to_vec(),
             format: None,
             output: None,
             keep_unnamed,
+            read: ReadArgs::default(),
         }
-        .names()?
-        .into_iter()
-        .map(|n| String::from_utf8(n).unwrap())
-        .collect())
+        .write_names(&mut out)?;
+
+        // every name ends in a newline, so the split leaves
+        // one empty piece at the end that is not a name. an
+        // empty piece anywhere else is --keep-unnamed's
+        // placeholder and has to survive
+        let mut lines: Vec<String> = out
+            .split(|&b| b == b'\n')
+            .map(|n| String::from_utf8(n.to_vec()).unwrap())
+            .collect();
+        lines.pop();
+
+        Ok(lines)
     }
 
     #[test]
