@@ -465,6 +465,51 @@ impl Index {
         Ok(())
     }
 
+    /// Index every record in `bytes`.
+    pub fn build<R: Read>(bytes: R, format: Format) -> Result<Index> {
+        let mut reader = Reader::new(bytes, format);
+        let mut offsets = Vec::new();
+
+        while reader.advance()? {
+            offsets.push(reader.offset());
+        }
+
+        Ok(Index::new(format, offsets))
+    }
+
+    /// Index every record in `bytes` and name it, in one pass.
+    pub fn build_named<R: Read>(bytes: R, format: Format) -> Result<Index> {
+        let mut reader = Reader::new(bytes, format);
+        let mut offsets = Vec::new();
+        let mut names: Vec<Option<Vec<u8>>> = Vec::new();
+
+        while reader.advance()? {
+            offsets.push(reader.offset());
+
+            // read out of the reader's buffer while the
+            // record is still in it: naming afterwards
+            // through name_with re-reads every record this
+            // pass already walked, one allocation and one
+            // pread at a time
+            names.push(crate::seq::name_of(format, reader.record()).map(<[u8]>::to_vec));
+        }
+
+        let mut index = Index::new(format, offsets);
+
+        // name_with owns the blob, the spans and the
+        // ordering, so the names are handed to it rather than
+        // assembled here twice
+        let mut at = 0;
+        index.name_with(|_| {
+            let name = names[at].take();
+            at += 1;
+
+            Ok(name.map(Cow::Owned))
+        })?;
+
+        Ok(index)
+    }
+
     /// The path a file's index is written to: the file's own, plus
     /// [`EXTENSION`].
     pub fn path_for(source: impl AsRef<Path>) -> PathBuf {
@@ -1330,5 +1375,506 @@ mod tests {
         assert!(Index::load(&path).is_err());
 
         clean(&path);
+    }
+}
+
+// ---
+
+/// The delimiter data for a format: the same two constants [`Delimit`]
+/// carries, reached through a value rather than a type parameter.
+fn delim_of(format: Format) -> (&'static [u8], Delimiter) {
+    use crate::seq::fasta::FastaDelimiter;
+    use crate::seq::p7hmm::HmmDelimiter;
+    use crate::seq::stockholm::StockholmDelimiter;
+
+    match format {
+        Format::Fasta => (FastaDelimiter::DELIM, FastaDelimiter::DELIM_TYPE),
+        Format::Stockholm => (StockholmDelimiter::DELIM, StockholmDelimiter::DELIM_TYPE),
+        Format::Hmm => (HmmDelimiter::DELIM, HmmDelimiter::DELIM_TYPE),
+    }
+}
+
+/// One record's bytes at a time, framed out of a stream.
+///
+/// Unlike [`build_index`], nothing is kept per record: a pass over a file
+/// costs the buffer and no more.
+///
+/// ```no_run
+/// # use libsail::{format::Format, index::Reader};
+/// # fn main() -> libsail::Result<()> {
+/// let mut reader = Reader::new(std::fs::File::open("proteins.fa")?, Format::Fasta);
+/// while reader.advance()? {
+///     let record = reader.record();
+///     // ...
+/// }
+/// # Ok(())
+/// # }
+/// ```
+pub struct Reader<R: Read> {
+    source: R,
+    format: Format,
+    delim: &'static [u8],
+    kind: Delimiter,
+
+    /// `'\n' + DELIM`, the anchored pattern [`scan`] also searches for.
+    needle: Vec<u8>,
+
+    /// A newline that is not in the file, then the file's bytes: `buf[i]` is at
+    /// file offset `base + i - 1`.
+    //
+    // the same seeded sentinel scan uses, and for the same
+    // reason: it stands in for the line ending before byte
+    // 0, so a file opening with a delimiter needs no first
+    // round special case
+    buf: Vec<u8>,
+    filled: usize,
+    base: u64,
+
+    /// Where the next record begins in `buf`.
+    cursor: usize,
+
+    /// The current record, as a range of `buf`.
+    start: usize,
+    len: usize,
+
+    eof: bool,
+    started: bool,
+    done: bool,
+}
+
+impl<R: Read> Reader<R> {
+    /// Frame `bytes` as `format`.
+    pub fn new(bytes: R, format: Format) -> Self {
+        let (delim, kind) = delim_of(format);
+
+        let mut needle = Vec::with_capacity(1 + delim.len());
+        needle.push(b'\n');
+        needle.extend_from_slice(delim);
+
+        let mut buf = vec![0u8; CHUNK + delim.len()];
+        buf[0] = b'\n';
+
+        Reader {
+            source: bytes,
+            format,
+            delim,
+            kind,
+            needle,
+            buf,
+            filled: 1,
+            base: 0,
+            cursor: 1,
+            start: 1,
+            len: 0,
+            eof: false,
+            started: false,
+            done: false,
+        }
+    }
+
+    /// Frame `bytes` as `format`, with a buffer of `chunk` fresh bytes.
+    #[cfg(test)]
+    fn with_chunk(bytes: R, format: Format, chunk: usize) -> Self {
+        let mut reader = Reader::new(bytes, format);
+
+        // chunk changes how often the buffer refills and
+        // nothing else, which is what lets the framing tests
+        // vary it across every delimiter boundary
+        reader.buf = vec![0u8; chunk.max(1) + reader.delim.len()];
+        reader.buf[0] = b'\n';
+
+        reader
+    }
+
+    /// Frame `bytes` as whatever format they open with.
+    pub fn detect(bytes: R) -> Result<Self> {
+        let mut reader = Reader::new(bytes, Format::Fasta);
+        reader.fill()?;
+
+        let format = crate::format::detect(&reader.buf[1..reader.filled])?;
+        let (delim, kind) = delim_of(format);
+
+        reader.needle.truncate(1);
+        reader.needle.extend_from_slice(delim);
+        reader.format = format;
+        reader.delim = delim;
+        reader.kind = kind;
+
+        Ok(reader)
+    }
+
+    pub fn format(&self) -> Format {
+        self.format
+    }
+
+    /// The current record's bytes; empty before the first [`advance`](Self::advance).
+    pub fn record(&self) -> &[u8] {
+        &self.buf[self.start..self.start + self.len]
+    }
+
+    /// Where the current record sits in the stream.
+    pub fn offset(&self) -> Offset {
+        Offset {
+            start: self.base + self.start as u64 - 1,
+            n_bytes: self.len,
+        }
+    }
+
+    /// Advance to the next record. `false` at the end of the stream.
+    pub fn advance(&mut self) -> Result<bool> {
+        if self.done {
+            return Ok(false);
+        }
+
+        match self.kind {
+            Delimiter::Initiating => self.advance_initiating(),
+            Delimiter::Terminating => self.advance_terminating(),
+        }
+    }
+
+    /// A record runs from its own delimiter to the next one, or to the end for
+    /// the last. Bytes before the first delimiter belong to no record.
+    fn advance_initiating(&mut self) -> Result<bool> {
+        if !self.started {
+            self.started = true;
+
+            match self.find(true)? {
+                Some(first) => self.cursor = first,
+                None => {
+                    self.done = true;
+
+                    return Ok(false);
+                }
+            }
+        }
+
+        // the next delimiter ends this record, so a record is
+        // only complete once the one after it is in hand --
+        // the lookahead the terminating formats do not need
+        let end = match self.find(false)? {
+            Some(next) => next,
+            None => {
+                self.done = true;
+
+                self.filled
+            }
+        };
+
+        self.start = self.cursor;
+        self.len = end - self.cursor;
+        self.cursor = end;
+
+        Ok(true)
+    }
+
+    /// A record runs from the end of the previous one through its delimiter's
+    /// own line. Bytes after the last delimiter are a truncated record.
+    fn advance_terminating(&mut self) -> Result<bool> {
+        self.started = true;
+
+        let Some(at) = self.find(true)? else {
+            self.done = true;
+
+            return Ok(false);
+        };
+
+        // + 1 for the newline ending the delimiter's line; a
+        // final delimiter with no trailing newline clamps to
+        // the end, exactly as frame does
+        let want = at - self.cursor + self.delim.len() + 1;
+        self.ensure(want)?;
+        let end = (self.cursor + want).min(self.filled);
+
+        self.start = self.cursor;
+        self.len = end - self.cursor;
+        self.cursor = end;
+
+        Ok(true)
+    }
+
+    /// The buffer index of the next delimiter, refilling until one is found or
+    /// the stream ends.
+    fn find(&mut self, anchored: bool) -> Result<Option<usize>> {
+        // `anchored` includes the byte before the cursor in
+        // the search, which is the newline the needle matches
+        // on. it is set for a record starting just past the
+        // previous one's last byte, and clear for one
+        // starting *at* its own delimiter, whose own match
+        // would otherwise be found again every round
+        let back = usize::from(anchored);
+
+        loop {
+            // recomputed every round: a refill compacts, and
+            // compaction moves everything by the same amount
+            // as the cursor
+            let from = self.cursor - back;
+
+            if let Some(j) = memmem::find(&self.buf[from..self.filled], &self.needle) {
+                return Ok(Some(from + j + 1));
+            }
+
+            if self.eof {
+                return Ok(None);
+            }
+
+            self.fill()?;
+        }
+    }
+
+    /// Read until `buf` holds `need` bytes past the cursor, or the stream ends.
+    fn ensure(&mut self, need: usize) -> Result<()> {
+        while self.filled < self.cursor + need && !self.eof {
+            self.fill()?;
+        }
+
+        Ok(())
+    }
+
+    /// Make room and read once.
+    fn fill(&mut self) -> Result<()> {
+        if self.eof {
+            return Ok(());
+        }
+
+        // everything before the byte the cursor anchors on is
+        // spent, so it is what compaction drops
+        let spent = self.cursor - 1;
+
+        if spent > 0 {
+            self.buf.copy_within(spent..self.filled, 0);
+            self.filled -= spent;
+            self.base += spent as u64;
+            self.cursor = 1;
+        } else if self.filled == self.buf.len() {
+            // the record is longer than the buffer, so
+            // compacting frees nothing. growing here is what
+            // keeps a record spanning k chunks at O(S) rather
+            // than the O(S^2/chunk) a fixed buffer would cost
+            self.buf.resize(self.buf.len() * 2, 0);
+        }
+
+        let n = read_some(&mut self.source, &mut self.buf[self.filled..])?;
+        self.filled += n;
+
+        if n == 0 {
+            self.eof = true;
+        }
+
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod reader_tests {
+    use super::*;
+    use crate::fixture;
+    use crate::seq::fasta::FastaDelimiter;
+    use crate::seq::p7hmm::HmmDelimiter;
+    use crate::seq::stockholm::StockholmDelimiter;
+
+    /// Every record the reader frames, as (offset, bytes).
+    fn framed(bytes: &[u8], format: Format, chunk: usize) -> Vec<(Offset, Vec<u8>)> {
+        let mut reader = Reader::with_chunk(bytes, format, chunk);
+        let mut out = Vec::new();
+
+        while reader.advance().unwrap() {
+            out.push((reader.offset(), reader.record().to_vec()));
+        }
+
+        out
+    }
+
+    /// What `build_index` frames, which is the answer the reader has to match.
+    fn indexed(bytes: &[u8], format: Format) -> Vec<(Offset, Vec<u8>)> {
+        let offsets = match format {
+            Format::Fasta => build_index::<_, FastaDelimiter>(bytes),
+            Format::Stockholm => build_index::<_, StockholmDelimiter>(bytes),
+            Format::Hmm => build_index::<_, HmmDelimiter>(bytes),
+        }
+        .unwrap();
+
+        offsets
+            .into_iter()
+            .map(|o| {
+                let at = o.start as usize;
+                let range = bytes[at..at + o.n_bytes].to_vec();
+
+                (o, range)
+            })
+            .collect()
+    }
+
+    #[test]
+    fn the_reader_frames_exactly_what_build_index_frames() {
+        // two independent framings of the same bytes, one
+        // buffered whole and one streamed: a carry that drops
+        // or repeats a delimiter shows up here and nowhere
+        // else
+        for (path, format) in [
+            (fixture!("proteins.fa"), Format::Fasta),
+            (fixture!("families.sto"), Format::Stockholm),
+            (fixture!("models.hmm"), Format::Hmm),
+        ] {
+            let bytes = std::fs::read(path).unwrap();
+            let want = indexed(&bytes, format);
+
+            assert!(!want.is_empty(), "{path} framed no records");
+
+            // every chunk size from one byte up, so a
+            // delimiter straddling a boundary is exercised at
+            // every position it can straddle one
+            for chunk in 1..=256 {
+                assert_eq!(
+                    framed(&bytes, format, chunk),
+                    want,
+                    "{path} at chunk {chunk}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_record_longer_than_the_buffer_is_framed_whole() {
+        // the case the compact-or-grow rule exists for: with
+        // nothing spent to compact away, the buffer has to
+        // grow or the record can never be completed
+        let mut bytes = Vec::from(&b">big\n"[..]);
+        bytes.extend(std::iter::repeat_n(b'A', 100_000));
+        bytes.extend_from_slice(b"\n>small\nACGT\n");
+
+        let want = indexed(&bytes, Format::Fasta);
+        assert_eq!(want.len(), 2);
+
+        for chunk in [1, 7, 64, 1024] {
+            assert_eq!(framed(&bytes, Format::Fasta, chunk), want, "chunk {chunk}");
+        }
+    }
+
+    #[test]
+    fn an_empty_stream_frames_no_records() {
+        for format in [Format::Fasta, Format::Stockholm, Format::Hmm] {
+            assert!(framed(b"", format, 8).is_empty(), "{format}");
+        }
+    }
+
+    #[test]
+    fn bytes_before_the_first_fasta_record_belong_to_none() {
+        // frame's rule for an initiating delimiter, which the
+        // reader has to reproduce
+        let bytes = b"junk before anything\n>a\nACGT\n";
+
+        assert_eq!(
+            framed(bytes, Format::Fasta, 4),
+            indexed(bytes, Format::Fasta)
+        );
+    }
+
+    #[test]
+    fn a_truncated_terminating_record_is_not_framed() {
+        // trailing bytes with no // after them are an
+        // unfinished alignment, and frame drops them
+        let bytes = b"# STOCKHOLM 1.0\nseq1 AC\n//\n# STOCKHOLM 1.0\nseq2 GT\n";
+
+        let want = indexed(bytes, Format::Stockholm);
+        assert_eq!(want.len(), 1);
+
+        for chunk in 1..=64 {
+            assert_eq!(
+                framed(bytes, Format::Stockholm, chunk),
+                want,
+                "chunk {chunk}"
+            );
+        }
+    }
+
+    #[test]
+    fn detect_reads_the_format_off_the_stream_and_still_frames_it() {
+        for (path, format) in [
+            (fixture!("proteins.fa"), Format::Fasta),
+            (fixture!("families.sto"), Format::Stockholm),
+            (fixture!("models.hmm"), Format::Hmm),
+        ] {
+            let bytes = std::fs::read(path).unwrap();
+            let mut reader = Reader::detect(&bytes[..]).unwrap();
+
+            assert_eq!(reader.format(), format, "{path}");
+
+            let mut n = 0;
+            while reader.advance().unwrap() {
+                n += 1;
+            }
+            assert_eq!(n, indexed(&bytes, format).len(), "{path}");
+        }
+    }
+}
+
+#[cfg(test)]
+mod build_tests {
+    use super::*;
+    use crate::fixture;
+    use crate::seq::fasta::IndexedFasta;
+
+    #[test]
+    fn a_built_index_addresses_the_same_records_as_a_scanned_one() {
+        // the one-pass build against the scan-then-name
+        // pass, offsets and names both
+        for (path, format) in [
+            (fixture!("proteins.fa"), Format::Fasta),
+            (fixture!("families.sto"), Format::Stockholm),
+            (fixture!("models.hmm"), Format::Hmm),
+        ] {
+            let bytes = std::fs::read(path).unwrap();
+
+            let built = Index::build(&bytes[..], format).unwrap();
+            let named = Index::build_named(&bytes[..], format).unwrap();
+
+            assert_eq!(built.len(), named.len(), "{path}");
+            assert_eq!(built.offsets(), named.offsets(), "{path}");
+            assert!(!built.has_names(), "{path}");
+            assert!(named.has_names(), "{path}");
+
+            for n in 0..named.len() {
+                let want = crate::seq::name_of(
+                    format,
+                    &bytes[named.offset(n).unwrap().start as usize..]
+                        [..named.offset(n).unwrap().n_bytes],
+                );
+                assert_eq!(named.name(n), want, "{path} record {n}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_built_index_matches_the_one_the_collection_builds() {
+        // IndexedFasta::open plus name_index is the other
+        // route to a named index, built from preads rather
+        // than from the framing buffer
+        let path = fixture!("proteins.fa");
+
+        let mut scanned = IndexedFasta::open(path).unwrap();
+        scanned.name_index().unwrap();
+
+        let built = Index::build_named(File::open(path).unwrap(), Format::Fasta).unwrap();
+
+        assert_eq!(built.offsets(), scanned.index().offsets());
+        for n in 0..built.len() {
+            assert_eq!(built.name(n), scanned.index().name(n), "record {n}");
+        }
+    }
+
+    #[test]
+    fn a_built_index_saves_and_loads_like_any_other() {
+        let path = std::env::temp_dir().join(format!("libsail-build-{}.fa", std::process::id()));
+        std::fs::write(&path, b">a\nACGT\n>b\nGGTT\n").unwrap();
+
+        let built = Index::build_named(File::open(&path).unwrap(), Format::Fasta).unwrap();
+        built.save(&path).unwrap();
+
+        let back = Index::load(&path).unwrap();
+        assert_eq!(back.offsets(), built.offsets());
+        assert_eq!(back.position(b"b"), Some(1));
+
+        std::fs::remove_file(&path).ok();
+        std::fs::remove_file(Index::path_for(&path)).ok();
     }
 }

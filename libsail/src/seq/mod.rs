@@ -7,3 +7,15 @@
 pub mod fasta;
 pub mod p7hmm;
 pub mod stockholm;
+
+use crate::format::Format;
+
+/// The name in one framed record's bytes, or `None` for a record carrying
+/// none, such as a Stockholm alignment with no `#=GF ID`.
+pub fn name_of(format: Format, record: &[u8]) -> Option<&[u8]> {
+    match format {
+        Format::Fasta => fasta::name_of(record),
+        Format::Stockholm => stockholm::name_of(record),
+        Format::Hmm => p7hmm::name_of(record),
+    }
+}

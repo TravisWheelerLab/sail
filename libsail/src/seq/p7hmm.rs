@@ -742,19 +742,24 @@ impl Hmm {
         let mut all = Vec::new();
         bytes.read_to_end(&mut all)?;
 
-        let records = build_index::<_, HmmDelimiter>(&all[..])?
-            .iter()
-            .enumerate()
-            .map(|(i, o)| {
-                let range = &all[o.start as usize..][..o.n_bytes];
+        let offsets = build_index::<_, HmmDelimiter>(&all[..])?;
 
-                // which profile failed matters as much as why:
-                // the positional body makes this reachable, so
-                // the message has to place the record
+        // a loop rather than collect::<Result<Vec<_>>>, whose
+        // size_hint floor is 0: the spine would double from 1
+        // and land on the next power of two, which is 302 MB
+        // of capacity for 193 MB of records on a 1 GiB file
+        let mut records = Vec::with_capacity(offsets.len());
+        for (i, o) in offsets.iter().enumerate() {
+            let range = &all[o.start as usize..][..o.n_bytes];
+
+            // which profile failed matters as much as why:
+            // the positional body makes this reachable, so
+            // the message has to place the record
+            records.push(
                 HmmParser::parse(range)
-                    .map_err(|e| Error::parse(format!("record {i} at byte {}: {e}", o.start)))
-            })
-            .collect::<Result<Vec<_>>>()?;
+                    .map_err(|e| Error::parse(format!("record {i} at byte {}: {e}", o.start)))?,
+            );
+        }
 
         Ok(Hmm { records })
     }
@@ -894,13 +899,21 @@ impl<S: Source> IndexedHmm<S> {
     /// The `n`th profile, or `None` past the end, keeping the failure reason
     /// that [`Indexable::get`] has to throw away.
     pub fn try_get(&self, n: usize) -> Result<Option<HmmRecord>> {
+        self.record(n)?
+            .map(|bytes| HmmParser::parse(&bytes))
+            .transpose()
+    }
+
+    /// The `n`th profile's framed bytes, or `None` past the end.
+    ///
+    /// Borrowed from a mapped source and owned from a read one, exactly as
+    /// [`Source::range`] hands them over.
+    pub fn record(&self, n: usize) -> Result<Option<Cow<'_, [u8]>>> {
         let Some(o) = self.index.offset(n) else {
             return Ok(None);
         };
 
-        Ok(Some(HmmParser::parse(
-            &self.source.range(o.start, o.n_bytes)?,
-        )?))
+        Ok(Some(self.source.range(o.start, o.n_bytes)?))
     }
 }
 
@@ -923,6 +936,13 @@ impl<S: Source> Indexable for IndexedHmm<S> {
     /// as `None`; [`try_get`](Self::try_get) keeps the reason.
     fn get(&self, n: usize) -> Option<HmmRecord> {
         self.try_get(n).ok().flatten()
+    }
+
+    // get parses a fresh profile and hands it over owned, so
+    // the default -- get, borrow, then clone -- would deep
+    // copy a record dropped on the next line
+    fn cloned(&self, n: usize) -> Option<HmmRecord> {
+        self.get(n)
     }
 }
 

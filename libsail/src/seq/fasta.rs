@@ -137,11 +137,22 @@ impl Parse for FastaParser {
         Ok(FastaRecord {
             name: header[..split].to_vec(),
             extra: header[split..].trim_ascii().to_vec(),
-            seq: residues
-                .iter()
-                .copied()
-                .filter(|b| !b.is_ascii_whitespace())
-                .collect(),
+            // reserved rather than collected: Filter's
+            // size_hint floor is 0, so collect() doubles from
+            // 8 and memcpy's the residues at every step.
+            // residues.len() overshoots only by the line
+            // endings, which is 1.7% at a 60 column wrap
+            seq: {
+                let mut seq = Vec::with_capacity(residues.len());
+                seq.extend(
+                    residues
+                        .iter()
+                        .copied()
+                        .filter(|b| !b.is_ascii_whitespace()),
+                );
+
+                seq
+            },
         })
     }
 }
@@ -178,6 +189,89 @@ fn as_str<'a>(bytes: &'a [u8], what: &str) -> Result<&'a str> {
 
 // ---
 
+/// The residue count in the bytes of one framed record, read without parsing
+/// it.
+///
+/// `0` where the bytes do not open with the delimiter, which is the one way
+/// [`FastaParser::parse`] can fail.
+pub fn len_of(record: &[u8]) -> usize {
+    if !record.starts_with(b">") {
+        return 0;
+    }
+
+    let Some(split) = memchr::memchr(b'\n', record) else {
+        return 0;
+    };
+
+    let residues = &record[split..];
+
+    // counted in blocks with a byte-wide accumulator, which
+    // is what lets this vectorise. `filter().count()` widens
+    // to usize before it can add, and `memchr_iter().count()`
+    // restarts the search at every match -- one per line, so
+    // seventeen million of them over a wrapped gigabyte
+    residues
+        .chunks(u8::MAX as usize)
+        .map(|chunk| {
+            chunk
+                .iter()
+                .fold(0u8, |n, &b| n + u8::from(!b.is_ascii_whitespace())) as usize
+        })
+        .sum()
+}
+
+/// Write one framed record's header and residues at `width` columns, without
+/// parsing it.
+///
+/// The same bytes [`FastaRecord::write_to`] writes for the same record,
+/// reached without building one.
+pub fn rewrap(record: &[u8], w: &mut dyn Write, width: usize) -> Result<()> {
+    let split = memchr::memchr(b'\n', record).unwrap_or(record.len());
+    let (header, residues) = record.split_at(split);
+
+    if !header.starts_with(b">") {
+        bail_parse!(
+            "a record starts with '>', found {:?}",
+            String::from_utf8_lossy(&record[..record.len().min(16)])
+        )
+    }
+
+    w.write_all(header.trim_ascii_end())?;
+    w.write_all(b"\n")?;
+
+    let width = width.max(1);
+    let mut col = 0;
+
+    // residues are copied in runs between line endings
+    // rather than a byte at a time, so a record already
+    // wrapped at `width` costs one write_all per line. col
+    // carries across runs, which is what re-wraps an input
+    // wrapped at some other width, or not wrapped at all
+    for run in residues.split(|b| b.is_ascii_whitespace()) {
+        let mut run = run;
+
+        while !run.is_empty() {
+            let take = (width - col).min(run.len());
+            w.write_all(&run[..take])?;
+            col += take;
+            run = &run[take..];
+
+            if col == width {
+                w.write_all(b"\n")?;
+                col = 0;
+            }
+        }
+    }
+
+    if col > 0 {
+        w.write_all(b"\n")?;
+    }
+
+    Ok(())
+}
+
+// ---
+
 /// Every record of a FASTA file, held in memory. Peak memory is roughly the
 /// bytes plus the records; use [`IndexedFasta`] for a file too large for that.
 #[derive(Debug, Default, Clone, PartialEq)]
@@ -191,20 +285,25 @@ impl Fasta {
         let mut all = Vec::new();
         bytes.read_to_end(&mut all)?;
 
-        let records = build_index::<_, FastaDelimiter>(&all[..])?
-            .iter()
-            .enumerate()
-            .map(|(i, o)| {
-                let range = &all[o.start as usize..][..o.n_bytes];
+        let offsets = build_index::<_, FastaDelimiter>(&all[..])?;
 
-                // defensive: build_index only frames ranges
-                // starting with the delimiter, so this cannot
-                // currently fail. if it ever can, which record
-                // failed matters as much as why
+        // a loop rather than collect::<Result<Vec<_>>>, whose
+        // size_hint floor is 0: the spine would double from 1
+        // and land on the next power of two, which is 302 MB
+        // of capacity for 193 MB of records on a 1 GiB file
+        let mut records = Vec::with_capacity(offsets.len());
+        for (i, o) in offsets.iter().enumerate() {
+            let range = &all[o.start as usize..][..o.n_bytes];
+
+            // defensive: build_index only frames ranges
+            // starting with the delimiter, so this cannot
+            // currently fail. if it ever can, which record
+            // failed matters as much as why
+            records.push(
                 FastaParser::parse(range)
-                    .map_err(|e| Error::parse(format!("record {i} at byte {}: {e}", o.start)))
-            })
-            .collect::<Result<Vec<_>>>()?;
+                    .map_err(|e| Error::parse(format!("record {i} at byte {}: {e}", o.start)))?,
+            );
+        }
 
         Ok(Fasta { records })
     }
@@ -338,13 +437,21 @@ impl<S: Source> IndexedFasta<S> {
     /// The `n`th record, or `None` past the end, keeping the failure reason
     /// that [`Indexable::get`] has to throw away.
     pub fn try_get(&self, n: usize) -> Result<Option<FastaRecord>> {
+        self.record(n)?
+            .map(|bytes| FastaParser::parse(&bytes))
+            .transpose()
+    }
+
+    /// The `n`th record's framed bytes, or `None` past the end.
+    ///
+    /// Borrowed from a mapped source and owned from a read one, exactly as
+    /// [`Source::range`] hands them over.
+    pub fn record(&self, n: usize) -> Result<Option<Cow<'_, [u8]>>> {
         let Some(o) = self.index.offset(n) else {
             return Ok(None);
         };
 
-        Ok(Some(FastaParser::parse(
-            &self.source.range(o.start, o.n_bytes)?,
-        )?))
+        Ok(Some(self.source.range(o.start, o.n_bytes)?))
     }
 }
 
@@ -367,6 +474,107 @@ impl<S: Source> Indexable for IndexedFasta<S> {
     /// as `None`; use [`try_get`](IndexedFasta::try_get) when the reason matters.
     fn get(&self, n: usize) -> Option<FastaRecord> {
         self.try_get(n).ok().flatten()
+    }
+
+    // get parses a fresh record and hands it over owned, so
+    // the default -- get, borrow, then clone -- would deep
+    // copy a record dropped on the next line
+    fn cloned(&self, n: usize) -> Option<FastaRecord> {
+        self.get(n)
+    }
+}
+
+#[cfg(test)]
+mod scan_tests {
+    use super::*;
+    use crate::fixture;
+
+    /// Every framed record in a fixture, as raw bytes.
+    fn records(path: &str) -> Vec<Vec<u8>> {
+        let all = std::fs::read(path).unwrap();
+
+        build_index::<_, FastaDelimiter>(&all[..])
+            .unwrap()
+            .into_iter()
+            .map(|o| all[o.start as usize..][..o.n_bytes].to_vec())
+            .collect()
+    }
+
+    #[test]
+    fn the_length_scan_agrees_with_the_parsed_record_on_every_fixture_record() {
+        for bytes in records(fixture!("proteins.fa")) {
+            assert_eq!(len_of(&bytes), FastaParser::parse(&bytes).unwrap().len());
+        }
+    }
+
+    #[test]
+    fn the_length_scan_counts_residues_and_not_bytes() {
+        // a record wrapped at 4 holds newlines the count must
+        // not see, and the header must not be counted at all
+        assert_eq!(len_of(b">a desc\nACGT\nACGT\nAC\n"), 10);
+        assert_eq!(len_of(b">a\nACGT"), 4);
+        assert_eq!(len_of(b">empty\n"), 0);
+    }
+
+    #[test]
+    fn bytes_that_do_not_open_a_record_have_no_length() {
+        assert_eq!(len_of(b"ACGT\n"), 0);
+        assert_eq!(len_of(b""), 0);
+    }
+
+    #[test]
+    fn rewrapping_framed_bytes_matches_writing_the_parsed_record() {
+        for bytes in records(fixture!("proteins.fa")) {
+            let mut direct = Vec::new();
+            rewrap(&bytes, &mut direct, DEFAULT_LINE_WIDTH).unwrap();
+
+            let mut parsed = Vec::new();
+            FastaParser::parse(&bytes)
+                .unwrap()
+                .write_to(&mut parsed, DEFAULT_LINE_WIDTH)
+                .unwrap();
+
+            assert_eq!(direct, parsed);
+        }
+    }
+
+    #[test]
+    fn a_record_wrapped_at_another_width_comes_out_at_this_one() {
+        // the case a verbatim copy cannot serve, and the
+        // reason rewrap carries a column across runs
+        let mut out = Vec::new();
+        rewrap(b">a\nACGTACGTAC\n", &mut out, 4).unwrap();
+
+        assert_eq!(out, b">a\nACGT\nACGT\nAC\n");
+    }
+
+    #[test]
+    fn rewrapping_is_stable_at_every_width() {
+        // idempotence at every width is what lets reformat
+        // run over its own output
+        for width in [1, 3, 10, 60, 1000] {
+            let mut once = Vec::new();
+            rewrap(b">a d\nACGTACGTACGTAC\n", &mut once, width).unwrap();
+
+            let mut twice = Vec::new();
+            rewrap(&once, &mut twice, width).unwrap();
+
+            assert_eq!(once, twice, "width {width}");
+        }
+    }
+
+    #[test]
+    fn a_record_with_no_residues_writes_only_its_header() {
+        let mut out = Vec::new();
+        rewrap(b">a\n", &mut out, 60).unwrap();
+
+        assert_eq!(out, b">a\n");
+    }
+
+    #[test]
+    fn bytes_that_do_not_open_a_record_are_refused() {
+        let mut out = Vec::new();
+        assert!(rewrap(b"ACGT\n", &mut out, 60).is_err());
     }
 }
 

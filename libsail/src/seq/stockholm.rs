@@ -384,19 +384,24 @@ impl Stockholm {
         let mut all = Vec::new();
         bytes.read_to_end(&mut all)?;
 
-        let records = build_index::<_, StockholmDelimiter>(&all[..])?
-            .iter()
-            .enumerate()
-            .map(|(i, o)| {
-                let range = &all[o.start as usize..][..o.n_bytes];
+        let offsets = build_index::<_, StockholmDelimiter>(&all[..])?;
 
-                // which alignment failed matters as much as
-                // why: the grammar makes this reachable, so
-                // the message has to place the record
+        // a loop rather than collect::<Result<Vec<_>>>, whose
+        // size_hint floor is 0: the spine would double from 1
+        // and land on the next power of two, which is 302 MB
+        // of capacity for 193 MB of records on a 1 GiB file
+        let mut records = Vec::with_capacity(offsets.len());
+        for (i, o) in offsets.iter().enumerate() {
+            let range = &all[o.start as usize..][..o.n_bytes];
+
+            // which alignment failed matters as much as
+            // why: the grammar makes this reachable, so
+            // the message has to place the record
+            records.push(
                 StockholmParser::parse(range)
-                    .map_err(|e| Error::parse(format!("record {i} at byte {}: {e}", o.start)))
-            })
-            .collect::<Result<Vec<_>>>()?;
+                    .map_err(|e| Error::parse(format!("record {i} at byte {}: {e}", o.start)))?,
+            );
+        }
 
         Ok(Stockholm { records })
     }
@@ -537,13 +542,21 @@ impl<S: Source> IndexedStockholm<S> {
     /// The `n`th alignment, or `None` past the end, keeping the failure reason
     /// that [`Indexable::get`] has to throw away.
     pub fn try_get(&self, n: usize) -> Result<Option<StockholmRecord>> {
+        self.record(n)?
+            .map(|bytes| StockholmParser::parse(&bytes))
+            .transpose()
+    }
+
+    /// The `n`th alignment's framed bytes, or `None` past the end.
+    ///
+    /// Borrowed from a mapped source and owned from a read one, exactly as
+    /// [`Source::range`] hands them over.
+    pub fn record(&self, n: usize) -> Result<Option<Cow<'_, [u8]>>> {
         let Some(o) = self.index.offset(n) else {
             return Ok(None);
         };
 
-        Ok(Some(StockholmParser::parse(
-            &self.source.range(o.start, o.n_bytes)?,
-        )?))
+        Ok(Some(self.source.range(o.start, o.n_bytes)?))
     }
 }
 
@@ -566,6 +579,13 @@ impl<S: Source> Indexable for IndexedStockholm<S> {
     /// as `None`; [`try_get`](Self::try_get) keeps the reason.
     fn get(&self, n: usize) -> Option<StockholmRecord> {
         self.try_get(n).ok().flatten()
+    }
+
+    // get parses a fresh alignment and hands it over owned,
+    // so the default -- get, borrow, then clone -- would
+    // deep copy a record dropped on the next line
+    fn cloned(&self, n: usize) -> Option<StockholmRecord> {
+        self.get(n)
     }
 }
 
