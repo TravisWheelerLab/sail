@@ -2,6 +2,8 @@
 name = "libsail"
 version = "0.1.0"
 description = "sequence analysis I/O library"
+readme = "README.md"
+exclude = ["CLAUDE.md"]
 edition.workspace = true
 license.workspace = true
 authors.workspace = true

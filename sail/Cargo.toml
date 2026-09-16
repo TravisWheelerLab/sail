@@ -2,6 +2,8 @@
 name = "sail"
 version = "0.2.0"
 description = "sequence analysis I/O tool"
+readme = "README.md"
+exclude = ["CLAUDE.md"]
 edition.workspace = true
 license.workspace = true
 authors.workspace = true
