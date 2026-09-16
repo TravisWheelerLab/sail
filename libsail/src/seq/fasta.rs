@@ -15,6 +15,7 @@ use crate::error::{Error, Result, bail_parse};
 use crate::format::Format;
 use crate::index::{Delimit, Delimiter, Index, build_index};
 use crate::parse::Parse;
+use crate::seq::as_str;
 #[cfg(feature = "mmap")]
 use crate::source::MmapSource;
 use crate::source::{FileSource, Source};
@@ -175,18 +176,6 @@ pub fn name_of(record: &[u8]) -> Option<&[u8]> {
         .unwrap_or(header.len());
 
     Some(&header[..end])
-}
-
-/// Decode `bytes`, naming what they were so a failure says where it happened.
-fn as_str<'a>(bytes: &'a [u8], what: &str) -> Result<&'a str> {
-    match std::str::from_utf8(bytes) {
-        Ok(s) => Ok(s),
-
-        // an error rather than replacement characters: a
-        // mangled name leaves the record unfindable by the
-        // name it has
-        Err(e) => bail_parse!("{what} is not valid utf-8: {e}"),
-    }
 }
 
 // ---

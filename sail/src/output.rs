@@ -105,11 +105,11 @@ pub mod name {
     /// `None` where the alignment carries no `#=GF ID`, which the spec does
     /// not require.
     pub fn stockholm(record: &StockholmRecord) -> Option<&[u8]> {
-        record.id().map(str::as_bytes)
+        record.id()
     }
 
     pub fn hmm(record: &HmmRecord) -> Option<&[u8]> {
-        Some(record.header.name.as_bytes())
+        Some(&record.header.name)
     }
 }
 

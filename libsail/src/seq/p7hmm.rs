@@ -16,6 +16,7 @@ use crate::error::{Error, Result, bail_parse};
 use crate::format::Format;
 use crate::index::{Delimit, Delimiter, Index, build_index};
 use crate::parse::Parse;
+use crate::seq::as_str;
 #[cfg(feature = "mmap")]
 use crate::source::MmapSource;
 use crate::source::{FileSource, Source};
@@ -75,10 +76,10 @@ impl Gumbel {
 #[derive(Debug, Clone, PartialEq)]
 pub struct HmmHeader {
     /// The file magic, e.g. `HMMER3/f [3.3 | Nov 2019]`.
-    pub version: String,
-    pub name: String,
-    pub acc: Option<String>,
-    pub desc: Option<String>,
+    pub version: Vec<u8>,
+    pub name: Vec<u8>,
+    pub acc: Option<Vec<u8>>,
+    pub desc: Option<Vec<u8>>,
     /// Number of match states, the query axis of a search.
     pub leng: usize,
     pub maxl: Option<usize>,
@@ -88,8 +89,8 @@ pub struct HmmHeader {
     pub cons: bool,
     pub cs: bool,
     pub map: bool,
-    pub date: Option<String>,
-    pub com: Vec<String>,
+    pub date: Option<Vec<u8>>,
+    pub com: Vec<Vec<u8>>,
     pub nseq: Option<usize>,
     pub effn: Option<f64>,
     pub cksum: Option<u32>,
@@ -104,14 +105,14 @@ pub struct HmmHeader {
     pub forward: Option<Gumbel>,
     /// Header lines this parser does not model, in order, so a model written
     /// back keeps them.
-    pub extra: Vec<(String, String)>,
+    pub extra: Vec<(Vec<u8>, Vec<u8>)>,
 }
 
 impl Default for HmmHeader {
     fn default() -> Self {
         HmmHeader {
-            version: "HMMER3/f".to_string(),
-            name: String::new(),
+            version: b"HMMER3/f".to_vec(),
+            name: Vec::new(),
             acc: None,
             desc: None,
             leng: 0,
@@ -290,14 +291,20 @@ impl Display for HmmRecord {
 }
 
 impl HmmHeader {
+    /// The model's name as text, if it is valid UTF-8.
+    pub fn name_str(&self) -> Result<&str> {
+        as_str(&self.name, "a profile name")
+    }
+
     pub fn write_to<W: Write>(&self, mut w: W) -> Result<()> {
-        writeln!(w, "{}", self.version)?;
-        writeln!(w, "NAME  {}", self.name)?;
+        w.write_all(&self.version)?;
+        writeln!(w)?;
+        field(&mut w, "NAME", &self.name)?;
         if let Some(v) = &self.acc {
-            writeln!(w, "ACC   {v}")?;
+            field(&mut w, "ACC", v)?;
         }
         if let Some(v) = &self.desc {
-            writeln!(w, "DESC  {v}")?;
+            field(&mut w, "DESC", v)?;
         }
         writeln!(w, "LENG  {}", self.leng)?;
         if let Some(v) = self.maxl {
@@ -319,10 +326,10 @@ impl HmmHeader {
             )?;
         }
         if let Some(v) = &self.date {
-            writeln!(w, "DATE  {v}")?;
+            field(&mut w, "DATE", v)?;
         }
         for v in &self.com {
-            writeln!(w, "COM   {v}")?;
+            field(&mut w, "COM", v)?;
         }
         if let Some(v) = self.nseq {
             writeln!(w, "NSEQ  {v}")?;
@@ -354,7 +361,10 @@ impl HmmHeader {
             }
         }
         for (key, value) in &self.extra {
-            writeln!(w, "{key}  {value}")?;
+            w.write_all(key)?;
+            w.write_all(b"  ")?;
+            w.write_all(value)?;
+            writeln!(w)?;
         }
         Ok(())
     }
@@ -387,17 +397,13 @@ impl Parse for HmmParser {
         //         framed, because the body is positional.
         //         they are the None IndexedHmm::get can
         //         return and IndexedFasta::get cannot
-        let Ok(text) = std::str::from_utf8(bytes) else {
-            bail_parse!("a profile is utf-8 text")
-        };
-
         // no blank line is meaningful anywhere in a model, and
         // dropping them here is what lets the body be read
         // positionally
-        let mut lines = text
-            .lines()
-            .map(str::trim_end)
-            .filter(|l| !l.trim().is_empty())
+        let mut lines = bytes
+            .split(|&b| b == b'\n')
+            .map(<[u8]>::trim_ascii_end)
+            .filter(|l| !l.trim_ascii().is_empty())
             .peekable();
 
         let mut header = read_header(&mut lines)?;
@@ -410,7 +416,7 @@ impl Parse for HmmParser {
 /// Everything from the magic through the line before `HMM`.
 fn read_header<'a, I>(lines: &mut std::iter::Peekable<I>) -> Result<HmmHeader>
 where
-    I: Iterator<Item = &'a str>,
+    I: Iterator<Item = &'a [u8]>,
 {
     let Some(version) = lines.next() else {
         bail_parse!("a profile starts with the HMMER3 magic, found nothing")
@@ -418,15 +424,15 @@ where
 
     // the analogue of FASTA's '>': the one check that says
     // these bytes are a profile at all
-    if !version.trim_start().starts_with("HMMER3") {
+    if !version.trim_ascii_start().starts_with(b"HMMER3") {
         bail_parse!(
             "a profile starts with the HMMER3 magic, found {:?}",
-            version.chars().take(32).collect::<String>()
+            String::from_utf8_lossy(&version[..version.len().min(32)])
         )
     }
 
     let mut h = HmmHeader {
-        version: version.trim().to_string(),
+        version: version.trim_ascii().to_vec(),
         ..Default::default()
     };
 
@@ -434,32 +440,40 @@ where
         let Some((key, value)) = split_first(line) else {
             break;
         };
-        if key == "HMM" {
+        if key == b"HMM" {
             break;
         }
         lines.next();
 
+        // the keys a profile is built from are ascii, so
+        // reading one as text costs nothing. an unmodelled
+        // key that is not goes to extra with its bytes
+        // intact, where a lossy reading is only a label
+        let key_text = String::from_utf8_lossy(key);
+        let key = key_text.as_ref();
+
         match key {
-            "NAME" => h.name = value.to_string(),
-            "ACC" => h.acc = Some(value.to_string()),
-            "DESC" => h.desc = Some(value.to_string()),
-            "LENG" => h.leng = number(value, key)?,
-            "MAXL" => h.maxl = Some(number(value, key)?),
-            "ALPH" => h.alph = Alphabet::from(value),
-            "RF" => h.rf = yes_no(value, key)?,
-            "MM" => h.mm = yes_no(value, key)?,
-            "CONS" => h.cons = yes_no(value, key)?,
-            "CS" => h.cs = yes_no(value, key)?,
-            "MAP" => h.map = yes_no(value, key)?,
-            "DATE" => h.date = Some(value.to_string()),
-            "COM" => h.com.push(value.to_string()),
-            "NSEQ" => h.nseq = Some(number(value, key)?),
-            "EFFN" => h.effn = Some(number(value, key)?),
-            "CKSUM" => h.cksum = Some(number(value, key)?),
-            "GA" => h.ga = Some(cutoff(value, key)?),
-            "TC" => h.tc = Some(cutoff(value, key)?),
-            "NC" => h.nc = Some(cutoff(value, key)?),
+            "NAME" => h.name = value.to_vec(),
+            "ACC" => h.acc = Some(value.to_vec()),
+            "DESC" => h.desc = Some(value.to_vec()),
+            "LENG" => h.leng = number(as_str(value, key)?, key)?,
+            "MAXL" => h.maxl = Some(number(as_str(value, key)?, key)?),
+            "ALPH" => h.alph = Alphabet::from(as_str(value, key)?),
+            "RF" => h.rf = yes_no(as_str(value, key)?, key)?,
+            "MM" => h.mm = yes_no(as_str(value, key)?, key)?,
+            "CONS" => h.cons = yes_no(as_str(value, key)?, key)?,
+            "CS" => h.cs = yes_no(as_str(value, key)?, key)?,
+            "MAP" => h.map = yes_no(as_str(value, key)?, key)?,
+            "DATE" => h.date = Some(value.to_vec()),
+            "COM" => h.com.push(value.to_vec()),
+            "NSEQ" => h.nseq = Some(number(as_str(value, key)?, key)?),
+            "EFFN" => h.effn = Some(number(as_str(value, key)?, key)?),
+            "CKSUM" => h.cksum = Some(number(as_str(value, key)?, key)?),
+            "GA" => h.ga = Some(cutoff(as_str(value, key)?, key)?),
+            "TC" => h.tc = Some(cutoff(as_str(value, key)?, key)?),
+            "NC" => h.nc = Some(cutoff(as_str(value, key)?, key)?),
             "STATS" => {
+                let value = as_str(value, key)?;
                 let fields: Vec<&str> = value.split_whitespace().collect();
                 let [_config, which, tau, lambda] = fields[..] else {
                     bail_parse!(
@@ -484,7 +498,7 @@ where
                     _ => bail_parse!("unknown STATS distribution {which:?}"),
                 }
             }
-            _ => h.extra.push((key.to_string(), value.to_string())),
+            _ => h.extra.push((key.as_bytes().to_vec(), value.to_vec())),
         }
     }
 
@@ -495,11 +509,12 @@ where
 /// `LENG` says how many nodes to read and the body carries no count of its own.
 fn read_model<'a, I>(lines: &mut std::iter::Peekable<I>, header: &mut HmmHeader) -> Result<HmmModel>
 where
-    I: Iterator<Item = &'a str>,
+    I: Iterator<Item = &'a [u8]>,
 {
     let Some(hmm_line) = lines.next() else {
         bail_parse!("the profile ends before its HMM line")
     };
+    let hmm_line = as_str(hmm_line, "a profile's HMM line")?;
 
     let symbols = hmm_line
         .split_whitespace()
@@ -521,11 +536,13 @@ where
     let Some(transition_header) = lines.next() else {
         bail_parse!("the profile ends before its transition header")
     };
+    let transition_header = as_str(transition_header, "a profile's transition header")?;
 
     // optional, and the only line of the body that may or may
     // not be there -- everything after it is positional
     let compo = match lines.peek().and_then(|l| split_first(l)) {
-        Some(("COMPO", rest)) => {
+        Some((b"COMPO", rest)) => {
+            let rest = as_str(rest, "a COMPO line")?;
             lines.next();
             Some(scores(rest, k, "COMPO")?)
         }
@@ -535,11 +552,13 @@ where
     let Some(line) = lines.next() else {
         bail_parse!("the profile ends before the begin node's insert emissions")
     };
+    let line = as_str(line, "the begin node's insert emissions")?;
     let begin_insert = scores(line, k, "the begin node's insert emissions")?;
 
     let Some(line) = lines.next() else {
         bail_parse!("the profile ends before the begin node's transitions")
     };
+    let line = as_str(line, "the begin node's transitions")?;
     let begin_transitions = scores(line, N_TRANSITIONS, "the begin node's transitions")?;
 
     let leng = header.leng;
@@ -552,6 +571,7 @@ where
         let Some(line) = lines.next() else {
             bail_parse!("the profile ends at node {node} of {leng}")
         };
+        let line = as_str(line, "a profile node")?;
 
         let fields: Vec<&str> = line.split_whitespace().collect();
         if fields.len() < 1 + k {
@@ -598,11 +618,13 @@ where
         let Some(line) = lines.next() else {
             bail_parse!("node {node} has no insert emissions")
         };
+        let line = as_str(line, "a node's insert emissions")?;
         insert_emissions.extend(scores(line, k, "insert emissions")?);
 
         let Some(line) = lines.next() else {
             bail_parse!("node {node} has no transitions")
         };
+        let line = as_str(line, "a node's transitions")?;
         transitions.extend(scores(line, N_TRANSITIONS, "transitions")?);
     }
 
@@ -611,8 +633,11 @@ where
     // is where that shows up
     match lines.next() {
         None => {}
-        Some(line) if line.trim_start().starts_with("//") => {}
-        Some(line) => bail_parse!("expected // after node {leng}, found {line:?}"),
+        Some(line) if line.trim_ascii_start().starts_with(b"//") => {}
+        Some(line) => bail_parse!(
+            "expected // after node {leng}, found {:?}",
+            String::from_utf8_lossy(line)
+        ),
     }
 
     Ok(HmmModel {
@@ -630,6 +655,38 @@ where
 
 /// The `NAME` header value in the bytes of one framed profile, read without
 /// parsing it. `None` where the header carries none.
+/// The model length on a framed record's `LENG` line, without parsing it.
+///
+/// `None` where the header carries no `LENG`, or where it is not a number.
+pub fn leng_of(record: &[u8]) -> Option<usize> {
+    for line in record.split(|&b| b == b'\n') {
+        let line = line.trim_ascii();
+        if line.is_empty() {
+            continue;
+        }
+
+        let end = line
+            .iter()
+            .position(|b| b.is_ascii_whitespace())
+            .unwrap_or(line.len());
+        let (key, value) = line.split_at(end);
+
+        // the header ends at HMM and the body below it is
+        // positional, so a LENG past here is not one
+        if key == b"HMM" {
+            return None;
+        }
+
+        if key == b"LENG" {
+            // a length is a number, so it is text on the way
+            // in whatever the rest of the header holds
+            return std::str::from_utf8(value.trim_ascii()).ok()?.parse().ok();
+        }
+    }
+
+    None
+}
+
 pub fn name_of(record: &[u8]) -> Option<&[u8]> {
     for line in record.split(|&b| b == b'\n') {
         let line = line.trim_ascii();
@@ -658,15 +715,28 @@ pub fn name_of(record: &[u8]) -> Option<&[u8]> {
 }
 
 /// The first whitespace-separated token and the rest of the line, trimmed.
-fn split_first(line: &str) -> Option<(&str, &str)> {
-    let line = line.trim_start();
+/// A `KEY value` header line, the key padded to the column the format writes
+/// values in.
+fn field<W: Write>(w: &mut W, key: &str, value: &[u8]) -> Result<()> {
+    write!(w, "{key}{}", " ".repeat(6 - key.len()))?;
+    w.write_all(value)?;
+    writeln!(w)?;
+
+    Ok(())
+}
+
+fn split_first(line: &[u8]) -> Option<(&[u8], &[u8])> {
+    let line = line.trim_ascii_start();
     if line.is_empty() {
         return None;
     }
 
-    let end = line.find(char::is_whitespace).unwrap_or(line.len());
+    let end = line
+        .iter()
+        .position(|b| b.is_ascii_whitespace())
+        .unwrap_or(line.len());
 
-    Some((&line[..end], line[end..].trim()))
+    Some((&line[..end], line[end..].trim_ascii()))
 }
 
 /// One score, where the file's `*` is [`f32::INFINITY`].
@@ -955,6 +1025,34 @@ mod tests {
     use super::*;
 
     #[test]
+    fn the_length_scan_agrees_with_the_parsed_record_on_every_fixture_record() {
+        // the same two independent readings the name scan
+        // gets: one reads LENG out of the bytes, the other
+        // parses the whole profile to reach the same field
+        let path = fixture!("models.hmm");
+        let bytes = std::fs::read(path).expect(path);
+        let offsets = build_index::<_, HmmDelimiter>(&bytes[..]).unwrap();
+
+        for o in &offsets {
+            let range = &bytes[o.start as usize..][..o.n_bytes];
+            let record = HmmParser::parse(range).unwrap();
+
+            assert_eq!(leng_of(range), Some(record.header.leng));
+        }
+    }
+
+    #[test]
+    fn a_length_scan_stops_where_the_header_does() {
+        // LENG is a header key, and the body below HMM is
+        // positional, so a line opening with it down there
+        // is a row of transition scores
+        assert_eq!(leng_of(b"NAME  x\nLENG  46\n"), Some(46));
+        assert_eq!(leng_of(b"NAME  x\nHMM  A C\nLENG  46\n"), None);
+        assert_eq!(leng_of(b"NAME  x\n"), None);
+        assert_eq!(leng_of(b"NAME  x\nLENG  forty\n"), None);
+    }
+
+    #[test]
     fn the_name_scan_agrees_with_the_parsed_record_on_every_fixture_record() {
         // two independent readings of one file: the scan
         // reads bytes and the parser reads a profile, and
@@ -971,7 +1069,7 @@ mod tests {
 
             assert_eq!(
                 name_of(range),
-                Some(record.header.name.as_bytes()),
+                Some(&record.header.name[..]),
                 "the profile at byte {}",
                 o.start
             );
@@ -1300,7 +1398,7 @@ mod tests {
 
     // ---
 
-    fn names<C: Indexable<Record = HmmRecord>>(c: &C) -> Vec<String> {
+    fn names<C: Indexable<Record = HmmRecord>>(c: &C) -> Vec<Vec<u8>> {
         c.iter().map(|r| r.borrow().header.name.clone()).collect()
     }
 
@@ -1319,7 +1417,7 @@ mod tests {
 
         assert_eq!(hmm.len(), 2);
         assert!(!hmm.is_empty());
-        assert_eq!(names(&hmm), ["demo", "other"]);
+        assert_eq!(names(&hmm), [b"demo".to_vec(), b"other".to_vec()]);
         assert!(hmm.get(2).is_none(), "past the end is None, not a panic");
     }
 
@@ -1349,13 +1447,13 @@ mod tests {
         let bytes = two_profiles();
         let named = Hmm::new(&bytes[..])
             .unwrap()
-            .filter(|r| r.header.name == "other");
-        assert_eq!(names(&named), ["other"]);
+            .filter(|r| r.header.name == b"other");
+        assert_eq!(names(&named), [b"other".to_vec()]);
 
         let by_name = Hmm::new(&bytes[..])
             .unwrap()
             .sort_by_key(|r| std::cmp::Reverse(r.header.name.clone()));
-        assert_eq!(names(&by_name), ["other", "demo"]);
+        assert_eq!(names(&by_name), [b"other".to_vec(), b"demo".to_vec()]);
         assert_eq!(Hmm::new(&bytes[..]).unwrap().sample(2).len(), 2);
     }
 
@@ -1366,12 +1464,12 @@ mod tests {
 
         // the two profiles hmmbuild makes from families.sto
         assert_eq!(hmm.len(), 2);
-        assert_eq!(names(&hmm), ["SH3_1", "PDZ"]);
+        assert_eq!(names(&hmm), [b"SH3_1".to_vec(), b"PDZ".to_vec()]);
 
         let sh3 = hmm.get(0).unwrap();
         assert_eq!(sh3.header.leng, 46);
         assert_eq!(sh3.model.k(), 20);
-        assert_eq!(sh3.header.acc.as_deref(), Some("PF00018.35"));
+        assert_eq!(sh3.header.acc.as_deref(), Some(&b"PF00018.35"[..]));
 
         // GA/TC/NC are Pfam's own curated cutoffs, carried through
         // hmmbuild from the SEED's #=GF GA rather than invented here
@@ -1426,7 +1524,7 @@ mod tests {
         assert!(disk.get(mem.len()).is_none(), "past the end is None");
         assert!(disk.try_get(mem.len()).unwrap().is_none());
         disk.validate().unwrap();
-        assert_eq!(names(&disk), ["demo", "other"]);
+        assert_eq!(names(&disk), [b"demo".to_vec(), b"other".to_vec()]);
 
         std::fs::remove_file(path).ok();
     }
@@ -1563,12 +1661,29 @@ mod tests {
         assert!(mapped.get(mem.len()).is_none(), "past the end is None");
         assert!(mapped.try_get(mem.len()).unwrap().is_none());
         mapped.validate().unwrap();
-        assert_eq!(names(&mapped), ["demo", "other"]);
+        assert_eq!(names(&mapped), [b"demo".to_vec(), b"other".to_vec()]);
 
         // SAFETY: as above
         let sorted = unsafe { MmapHmm::map(&path) }.unwrap().sample(2);
         assert_eq!(sorted.len(), 2, "the combinators reach it too");
 
         std::fs::remove_file(path).ok();
+    }
+
+    #[test]
+    fn a_header_field_that_is_not_utf_8_no_longer_fails_the_profile() {
+        // the latin-1 byte Pfam's alignments carry reaches a
+        // model through DESC, and the profile used to be
+        // refused for it
+        let mut rec = record();
+        rec.header.desc = Some(b"Fran\xF4ois".to_vec());
+
+        let back = HmmParser::parse(&written(&rec)).unwrap();
+
+        let desc = back.header.desc.as_deref().expect("DESC survives");
+        assert_eq!(desc, b"Fran\xF4ois", "byte for byte");
+        assert!(std::str::from_utf8(desc).is_err());
+
+        assert!(back.header.name_str().is_ok(), "an ascii name still reads");
     }
 }

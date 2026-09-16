@@ -19,6 +19,7 @@ use crate::error::{Error, Result, bail_parse};
 use crate::format::Format;
 use crate::index::{Delimit, Delimiter, Index, build_index};
 use crate::parse::Parse;
+use crate::seq::as_str;
 #[cfg(feature = "mmap")]
 use crate::source::MmapSource;
 use crate::source::{FileSource, Source};
@@ -30,19 +31,19 @@ pub const HEADER: &str = "# STOCKHOLM 1.0";
 pub struct StockholmRecord {
     /// `#=GF` features as (feature, value), in file order. A list rather than
     /// a map because a feature may repeat.
-    pub gf: Vec<(String, String)>,
+    pub gf: Vec<(Vec<u8>, Vec<u8>)>,
     /// `#=GS` annotations as (sequence name, feature, value), in file order.
-    pub gs: Vec<(String, String, String)>,
+    pub gs: Vec<(Vec<u8>, Vec<u8>, Vec<u8>)>,
     /// `#=GC` column annotations, concatenated across interleaved blocks.
-    pub gc: IndexMap<String, String>,
+    pub gc: IndexMap<Vec<u8>, Vec<u8>>,
     /// `#=GR` per-residue annotations keyed by (sequence name, feature),
     /// concatenated across interleaved blocks.
-    pub gr: IndexMap<(String, String), String>,
+    pub gr: IndexMap<(Vec<u8>, Vec<u8>), Vec<u8>>,
     /// Row names, in the order they first appear.
-    pub names: Vec<String>,
+    pub names: Vec<Vec<u8>>,
     /// Aligned rows, all of equal width.
     pub seqs: Vec<Vec<u8>>,
-    index: IndexMap<String, usize>,
+    index: IndexMap<Vec<u8>, usize>,
 }
 
 impl StockholmRecord {
@@ -61,7 +62,7 @@ impl StockholmRecord {
     }
 
     /// The row named `name`.
-    pub fn get(&self, name: &str) -> Option<&[u8]> {
+    pub fn get(&self, name: &[u8]) -> Option<&[u8]> {
         self.index.get(name).map(|&i| self.seqs[i].as_slice())
     }
 
@@ -72,43 +73,59 @@ impl StockholmRecord {
 
     /// The `#=GF ID` value, if the alignment carries one — the spec does not
     /// require it, and `hmmalign` output omits it.
-    pub fn id(&self) -> Option<&str> {
+    pub fn id(&self) -> Option<&[u8]> {
         // read out of gf rather than stored beside it:
         // write_to emits gf, so a stored id could be written
         // into a record and then silently dropped
-        self.gf_first("ID")
+        self.gf_first(b"ID")
+    }
+
+    /// The `#=GF ID` value as text, if the alignment carries one.
+    pub fn id_str(&self) -> Result<Option<&str>> {
+        self.id()
+            .map(|id| as_str(id, "an alignment id"))
+            .transpose()
     }
 
     /// The first value for a `#=GF` feature.
-    pub fn gf_first(&self, feature: &str) -> Option<&str> {
+    pub fn gf_first(&self, feature: &[u8]) -> Option<&[u8]> {
         self.gf
             .iter()
             .find(|(f, _)| f == feature)
-            .map(|(_, v)| v.as_str())
+            .map(|(_, v)| v.as_slice())
     }
 
     /// Every value for a `#=GF` feature, in file order.
-    pub fn gf_all<'a>(&'a self, feature: &'a str) -> impl Iterator<Item = &'a str> + 'a {
+    pub fn gf_all<'a>(&'a self, feature: &'a [u8]) -> impl Iterator<Item = &'a [u8]> + 'a {
         self.gf
             .iter()
             .filter(move |(f, _)| f == feature)
-            .map(|(_, v)| v.as_str())
+            .map(|(_, v)| v.as_slice())
+    }
+
+    /// One row's `#=GR` annotation, without building the key it is stored
+    /// under.
+    pub fn gr_get(&self, name: &[u8], feature: &[u8]) -> Option<&[u8]> {
+        self.gr
+            .iter()
+            .find(|((n, f), _)| n == name && f == feature)
+            .map(|(_, v)| v.as_slice())
     }
 
     /// The consensus secondary structure, if the alignment carries one.
-    pub fn ss_cons(&self) -> Option<&str> {
-        self.gc.get("SS_cons").map(|s| s.as_str())
+    pub fn ss_cons(&self) -> Option<&[u8]> {
+        self.gc.get(b"SS_cons".as_slice()).map(|s| s.as_slice())
     }
 
     /// The index of `name`'s row, appending an empty one if it is new. The only
     /// way to add a row: appending to `names`/`seqs` desynchronizes the index.
-    pub fn row(&mut self, name: &str) -> usize {
+    pub fn row(&mut self, name: &[u8]) -> usize {
         if let Some(&i) = self.index.get(name) {
             return i;
         }
         let i = self.seqs.len();
-        self.index.insert(name.to_string(), i);
-        self.names.push(name.to_string());
+        self.index.insert(name.to_vec(), i);
+        self.names.push(name.to_vec());
         self.seqs.push(Vec::new());
         i
     }
@@ -122,7 +139,8 @@ impl StockholmRecord {
         for (name, seq) in self.names.iter().zip(&self.seqs) {
             if seq.len() != width {
                 bail_parse!(
-                    "sequence {name:?} spans {} columns but the alignment is {width} wide",
+                    "sequence {:?} spans {} columns but the alignment is {width} wide",
+                    String::from_utf8_lossy(name),
                     seq.len()
                 );
             }
@@ -131,7 +149,8 @@ impl StockholmRecord {
         for (feature, value) in &self.gc {
             if value.len() != width {
                 bail_parse!(
-                    "#=GC {feature} spans {} columns but the alignment is {width} wide",
+                    "#=GC {} spans {} columns but the alignment is {width} wide",
+                    String::from_utf8_lossy(feature),
                     value.len()
                 );
             }
@@ -140,7 +159,9 @@ impl StockholmRecord {
         for ((name, feature), value) in &self.gr {
             if value.len() != width {
                 bail_parse!(
-                    "#=GR {name} {feature} spans {} columns but the alignment is {width} wide",
+                    "#=GR {} {} spans {} columns but the alignment is {width} wide",
+                    String::from_utf8_lossy(name),
+                    String::from_utf8_lossy(feature),
                     value.len()
                 );
             }
@@ -153,26 +174,27 @@ impl StockholmRecord {
         writeln!(w, "{HEADER}")?;
 
         for (feature, value) in &self.gf {
-            writeln!(w, "#=GF {feature} {value}")?;
+            tagged(&mut w, b"#=GF", &[feature, value])?;
         }
         for (name, feature, value) in &self.gs {
-            writeln!(w, "#=GS {name} {feature} {value}")?;
+            tagged(&mut w, b"#=GS", &[name, feature, value])?;
         }
 
         for (name, seq) in self.names.iter().zip(&self.seqs) {
-            write!(w, "{name} ")?;
+            w.write_all(name)?;
+            w.write_all(b" ")?;
             w.write_all(seq)?;
             writeln!(w)?;
 
             for ((gr_name, feature), value) in &self.gr {
                 if gr_name == name {
-                    writeln!(w, "#=GR {gr_name} {feature} {value}")?;
+                    tagged(&mut w, b"#=GR", &[gr_name, feature, value])?;
                 }
             }
         }
 
         for (feature, value) in &self.gc {
-            writeln!(w, "#=GC {feature} {value}")?;
+            tagged(&mut w, b"#=GC", &[feature, value])?;
         }
 
         writeln!(w, "//")?;
@@ -216,78 +238,67 @@ impl Parse for StockholmParser {
         //         a header plus residues. they are the None
         //         IndexedStockholm::get can return and
         //         IndexedFasta::get cannot
-        let Ok(text) = std::str::from_utf8(bytes) else {
-            bail_parse!("an alignment is utf-8 text, unlike FASTA's byte names")
-        };
-
         let mut rec = StockholmRecord::default();
         let mut seen_header = false;
 
-        for line in text.lines() {
+        for line in bytes.split(|&b| b == b'\n') {
             // trimming the end drops a trailing \r, so a CRLF
             // file parses. the writer emits \n only
-            let line = line.trim_end();
+            let line = line.trim_ascii_end();
 
-            let Some((tag, rest)) = split_first(line) else {
+            let Some((tag, rest)) = split_first_bytes(line) else {
                 continue;
             };
 
             // a terminator need not end its line, so this
             // tests the prefix; see index::Delimit::DELIM
-            if tag.starts_with("//") {
+            if tag.starts_with(b"//") {
                 break;
             }
 
             if !seen_header {
-                if !line.trim_start().starts_with("# STOCKHOLM") {
+                if !line.trim_ascii_start().starts_with(b"# STOCKHOLM") {
                     bail_parse!(
                         "an alignment starts with {HEADER:?}, found {:?}",
-                        line.chars().take(32).collect::<String>()
+                        String::from_utf8_lossy(&line[..line.len().min(32)])
                     )
                 }
                 seen_header = true;
                 continue;
             }
 
-            match tag {
-                "#=GF" => {
-                    let (feature, value) = split_two(rest, "#=GF", line)?;
-                    rec.gf.push((feature.to_string(), value.to_string()));
-                }
-                "#=GS" => {
-                    let (name, rest) = split_two(rest, "#=GS", line)?;
-                    let (feature, value) = split_two(rest, "#=GS", line)?;
-                    rec.gs
-                        .push((name.to_string(), feature.to_string(), value.to_string()));
-                }
-                "#=GC" => {
-                    let (feature, value) = split_two(rest, "#=GC", line)?;
+            if tag == b"#=GF" {
+                let (feature, value) = split_two(rest, "#=GF", line)?;
+                rec.gf.push((feature.to_vec(), value.to_vec()));
+            } else if tag == b"#=GS" {
+                let (name, rest) = split_two(rest, "#=GS", line)?;
+                let (feature, value) = split_two(rest, "#=GS", line)?;
+                rec.gs
+                    .push((name.to_vec(), feature.to_vec(), value.to_vec()));
+            } else if tag == b"#=GC" {
+                let (feature, value) = split_two(rest, "#=GC", line)?;
 
-                    // concatenated, not replaced: one feature
-                    // reappears in every block and the pieces
-                    // are consecutive stretches of one row
-                    rec.gc
-                        .entry(feature.to_string())
-                        .or_default()
-                        .push_str(aligned(value, line)?);
-                }
-                "#=GR" => {
-                    let (name, rest) = split_two(rest, "#=GR", line)?;
-                    let (feature, value) = split_two(rest, "#=GR", line)?;
-                    rec.gr
-                        .entry((name.to_string(), feature.to_string()))
-                        .or_default()
-                        .push_str(aligned(value, line)?);
-                }
-                _ if tag.starts_with('#') => {}
-                name => {
-                    let residues = aligned(rest, line)?;
+                // concatenated, not replaced: one feature
+                // reappears in every block and the pieces
+                // are consecutive stretches of one row
+                rec.gc
+                    .entry(feature.to_vec())
+                    .or_default()
+                    .extend_from_slice(aligned(value, line)?);
+            } else if tag == b"#=GR" {
+                let (name, rest) = split_two(rest, "#=GR", line)?;
+                let (feature, value) = split_two(rest, "#=GR", line)?;
+                rec.gr
+                    .entry((name.to_vec(), feature.to_vec()))
+                    .or_default()
+                    .extend_from_slice(aligned(value, line)?);
+            } else if !tag.starts_with(b"#") {
+                let residues = aligned(rest, line)?;
 
-                    // through row(), which is what keeps the
-                    // private index in step with names and seqs
-                    let i = rec.row(name);
-                    rec.seqs[i].extend_from_slice(residues.as_bytes());
-                }
+                // through row(), which is what keeps the
+                // private index in step with names and seqs
+                let i = rec.row(tag);
+                rec.seqs[i].extend_from_slice(residues);
             }
         }
 
@@ -324,8 +335,7 @@ pub fn name_of(record: &[u8]) -> Option<&[u8]> {
     None
 }
 
-/// [`split_first`] over bytes, so a name can be found without decoding the
-/// alignment.
+/// The first whitespace-separated token and the rest of the line, trimmed.
 fn split_first_bytes(line: &[u8]) -> Option<(&[u8], &[u8])> {
     let line = line.trim_ascii_start();
     if line.is_empty() {
@@ -340,31 +350,39 @@ fn split_first_bytes(line: &[u8]) -> Option<(&[u8], &[u8])> {
     Some((&line[..end], line[end..].trim_ascii()))
 }
 
-/// The first whitespace-separated token and the rest of the line, trimmed.
-fn split_first(line: &str) -> Option<(&str, &str)> {
-    let line = line.trim_start();
-    if line.is_empty() {
-        return None;
+/// `tag`, then each of `parts` behind a space, then a newline.
+fn tagged<W: Write>(w: &mut W, tag: &[u8], parts: &[&Vec<u8>]) -> Result<()> {
+    w.write_all(tag)?;
+
+    for part in parts {
+        w.write_all(b" ")?;
+        w.write_all(part)?;
     }
 
-    let end = line.find(char::is_whitespace).unwrap_or(line.len());
+    writeln!(w)?;
 
-    Some((&line[..end], line[end..].trim()))
+    Ok(())
 }
 
-/// [`split_first`], naming the line that was short of a field.
-fn split_two<'a>(rest: &'a str, what: &str, line: &str) -> Result<(&'a str, &'a str)> {
-    match split_first(rest) {
+/// [`split_first_bytes`], naming the line that was short of a field.
+fn split_two<'a>(rest: &'a [u8], what: &str, line: &[u8]) -> Result<(&'a [u8], &'a [u8])> {
+    match split_first_bytes(rest) {
         Some(pair) => Ok(pair),
-        None => bail_parse!("a {what} line is missing a field: {line:?}"),
+        None => bail_parse!(
+            "a {what} line is missing a field: {:?}",
+            String::from_utf8_lossy(line)
+        ),
     }
 }
 
 /// One column-aligned field: whitespace-free, since a space inside one would
 /// shift every column after it.
-fn aligned<'a>(value: &'a str, line: &str) -> Result<&'a str> {
-    if value.is_empty() || value.contains(char::is_whitespace) {
-        bail_parse!("expected one run of aligned columns, found {line:?}")
+fn aligned<'a>(value: &'a [u8], line: &[u8]) -> Result<&'a [u8]> {
+    if value.is_empty() || value.iter().any(|b| b.is_ascii_whitespace()) {
+        bail_parse!(
+            "expected one run of aligned columns, found {:?}",
+            String::from_utf8_lossy(line)
+        )
     }
 
     Ok(value)
@@ -614,7 +632,7 @@ mod tests {
 
             assert_eq!(
                 name_of(range),
-                record.id().map(str::as_bytes),
+                record.id(),
                 "the alignment at byte {}",
                 o.start
             );
@@ -647,9 +665,9 @@ mod tests {
     fn aln() -> StockholmRecord {
         let mut rec = StockholmRecord::default();
         rec.gf.push(("ID".into(), "FAM1".into()));
-        let a = rec.row("seq1");
+        let a = rec.row(b"seq1");
         rec.seqs[a].extend_from_slice(b"ACGT");
-        let b = rec.row("seq2");
+        let b = rec.row(b"seq2");
         rec.seqs[b].extend_from_slice(b"AC-T");
         rec.gc.insert("SS_cons".into(), "<..>".into());
         rec.gr.insert(("seq1".into(), "PP".into()), "9876".into());
@@ -661,23 +679,23 @@ mod tests {
     fn row_appends_once_and_finds_the_same_row_again() {
         // the side index has to stay in step with names and seqs
         let mut rec = StockholmRecord::default();
-        let first = rec.row("seq1");
-        let again = rec.row("seq1");
+        let first = rec.row(b"seq1");
+        let again = rec.row(b"seq1");
         assert_eq!(first, again, "asking twice must not append twice");
         assert_eq!(rec.names.len(), 1);
         assert_eq!(rec.seqs.len(), 1);
 
-        let other = rec.row("seq2");
+        let other = rec.row(b"seq2");
         assert_ne!(first, other);
-        assert_eq!(rec.names, ["seq1", "seq2"]);
+        assert_eq!(rec.names, [b"seq1", b"seq2"]);
     }
 
     #[test]
     fn get_finds_a_row_added_through_row() {
         let rec = aln();
-        assert_eq!(rec.get("seq1"), Some(&b"ACGT"[..]));
-        assert_eq!(rec.get("seq2"), Some(&b"AC-T"[..]));
-        assert_eq!(rec.get("absent"), None);
+        assert_eq!(rec.get(b"seq1"), Some(&b"ACGT"[..]));
+        assert_eq!(rec.get(b"seq2"), Some(&b"AC-T"[..]));
+        assert_eq!(rec.get(b"absent"), None);
     }
 
     #[test]
@@ -706,19 +724,19 @@ mod tests {
         rec.gf.push(("DR".into(), "second".into()));
         rec.gf.push(("AC".into(), "PF00001".into()));
 
-        assert_eq!(rec.gf_first("DR"), Some("first"));
+        assert_eq!(rec.gf_first(b"DR"), Some(&b"first"[..]));
         assert_eq!(
-            rec.gf_all("DR").collect::<Vec<_>>(),
-            ["first", "second"],
+            rec.gf_all(b"DR").collect::<Vec<_>>(),
+            [&b"first"[..], &b"second"[..]],
             "both survive, in file order"
         );
-        assert_eq!(rec.gf_first("nope"), None);
+        assert_eq!(rec.gf_first(b"nope"), None);
     }
 
     #[test]
     fn the_consensus_structure_is_a_column_annotation() {
         // Rfam's SS_cons lives in #=GC
-        assert_eq!(aln().ss_cons(), Some("<..>"));
+        assert_eq!(aln().ss_cons(), Some(&b"<..>"[..]));
         assert_eq!(StockholmRecord::default().ss_cons(), None);
     }
 
@@ -731,7 +749,7 @@ mod tests {
     #[test]
     fn validate_rejects_a_ragged_row() {
         let mut rec = aln();
-        let i = rec.row("seq2");
+        let i = rec.row(b"seq2");
         rec.seqs[i].push(b'A');
         let err = rec.validate().unwrap_err();
         assert!(err.to_string().contains("seq2"), "{err}");
@@ -759,7 +777,7 @@ mod tests {
 
         assert!(text.starts_with(HEADER), "{text}");
         assert!(text.trim_end().ends_with("//"), "{text}");
-        assert_eq!(aln().id(), Some("FAM1"));
+        assert_eq!(aln().id(), Some(&b"FAM1"[..]));
         for needle in [
             "#=GF ID FAM1",
             "#=GF DE a family",
@@ -777,7 +795,7 @@ mod tests {
         // the spec does not require #=GF ID, and
         // hmmalign output omits it
         let mut rec = aln();
-        rec.gf.retain(|(f, _)| f != "ID");
+        rec.gf.retain(|(f, _)| f != b"ID");
         assert_eq!(rec.id(), None);
         let mut out = Vec::new();
         rec.write_to(&mut out).unwrap();
@@ -821,7 +839,12 @@ seq9     GGGG
 
     fn ids<C: Indexable<Record = StockholmRecord>>(c: &C) -> Vec<String> {
         c.iter()
-            .map(|r| r.borrow().id().unwrap_or("?").to_string())
+            .map(|r| {
+                r.borrow()
+                    .id()
+                    .map(|id| String::from_utf8_lossy(id).into_owned())
+                    .unwrap_or_else(|| "?".into())
+            })
             .collect()
     }
 
@@ -859,13 +882,10 @@ seq9     GGGG
         let rec = sto.get(0).unwrap();
 
         assert_eq!(rec.depth(), 2, "two rows, not four");
-        assert_eq!(rec.get("seq1"), Some(&b"ACGTTTTT"[..]));
-        assert_eq!(rec.get("seq2"), Some(&b"AC-TTT-T"[..]));
-        assert_eq!(rec.ss_cons(), Some("<..>>..>"));
-        assert_eq!(
-            rec.gr.get(&("seq1".to_string(), "PP".to_string())),
-            Some(&"98765432".to_string())
-        );
+        assert_eq!(rec.get(b"seq1"), Some(&b"ACGTTTTT"[..]));
+        assert_eq!(rec.get(b"seq2"), Some(&b"AC-TTT-T"[..]));
+        assert_eq!(rec.ss_cons(), Some(&b"<..>>..>"[..]));
+        assert_eq!(rec.gr_get(b"seq1", b"PP"), Some(&b"98765432"[..]));
 
         rec.validate()
             .expect("the rows and both annotations span 8 columns");
@@ -884,14 +904,10 @@ seq9     GGGG
         )
         .unwrap();
 
-        assert_eq!(rec.gf_first("DE"), Some("a family of things"));
+        assert_eq!(rec.gf_first(b"DE"), Some(&b"a family of things"[..]));
         assert_eq!(
             rec.gs,
-            [(
-                "seq1".to_string(),
-                "DE".to_string(),
-                "alpha subunit".to_string()
-            )]
+            [(b"seq1".to_vec(), b"DE".to_vec(), b"alpha subunit".to_vec())]
         );
     }
 
@@ -901,7 +917,7 @@ seq9     GGGG
         // reading it as a row would invent a sequence named #
         let rec = StockholmParser::parse(b"# STOCKHOLM 1.0\n# a note\nseq1 AC\n//\n").unwrap();
 
-        assert_eq!(rec.names, ["seq1"]);
+        assert_eq!(rec.names, [b"seq1"]);
         assert_eq!(rec.depth(), 1);
     }
 
@@ -912,8 +928,8 @@ seq9     GGGG
         // bleed into the first
         let rec = StockholmParser::parse(TWO).unwrap();
 
-        assert_eq!(rec.id(), Some("FAM1"));
-        assert!(rec.get("seq9").is_none(), "that row is the next family's");
+        assert_eq!(rec.id(), Some(&b"FAM1"[..]));
+        assert!(rec.get(b"seq9").is_none(), "that row is the next family's");
     }
 
     #[test]
@@ -943,7 +959,7 @@ seq9     GGGG
     #[test]
     fn a_carriage_return_never_reaches_a_row() {
         let rec = StockholmParser::parse(b"# STOCKHOLM 1.0\r\nseq1 ACGT\r\n//\r\n").unwrap();
-        assert_eq!(rec.get("seq1"), Some(&b"ACGT"[..]));
+        assert_eq!(rec.get(b"seq1"), Some(&b"ACGT"[..]));
     }
 
     #[test]
@@ -1025,18 +1041,18 @@ seq9     GGGG
         assert_eq!(sh3.depth(), 6);
         assert_eq!(sh3.width(), 56);
         assert_eq!(
-            sh3.get("VAV_HUMAN/788-834"),
+            sh3.get(b"VAV_HUMAN/788-834"),
             Some(&b"KARYDFCARD..RSELSLKEGDIIKILNKKGQ..QGWWRGEIY.....GRVGWFPA"[..])
         );
         assert_eq!(
-            sh3.gf_all("DR").collect::<Vec<_>>(),
+            sh3.gf_all(b"DR").collect::<Vec<_>>(),
             [
-                "INTERPRO; IPR001452;",
-                "PROSITE; PDOC50002;",
-                "PRINTS; PR00452;",
-                "SCOP; 1shf; sf;",
-                "HOMSTRAD; sh3;",
-                "SO; 0000417; polypeptide_domain;",
+                &b"INTERPRO; IPR001452;"[..],
+                &b"PROSITE; PDOC50002;"[..],
+                &b"PRINTS; PR00452;"[..],
+                &b"SCOP; 1shf; sf;"[..],
+                &b"HOMSTRAD; sh3;"[..],
+                &b"SO; 0000417; polypeptide_domain;"[..],
             ],
             "a repeated feature keeps every value, in file order"
         );
@@ -1082,7 +1098,7 @@ seq9     GGGG
                 .get(0)
                 .unwrap()
                 .id(),
-            Some("FAM2")
+            Some(&b"FAM2"[..])
         );
 
         std::fs::remove_file(path).ok();
@@ -1225,5 +1241,42 @@ seq9     GGGG
         assert_eq!(sorted.len(), 2, "the combinators reach it too");
 
         std::fs::remove_file(path).ok();
+    }
+
+    #[test]
+    fn an_annotation_that_is_not_utf_8_no_longer_fails_the_alignment() {
+        // Pfam SEED writes author names in latin-1, where an
+        // o-circumflex is the single byte 0xF4. the whole
+        // alignment used to be refused for it
+        let mut input = b"# STOCKHOLM 1.0\n#=GF ID FAM1\n#=GF RA Fran".to_vec();
+        input.push(0xF4);
+        input.extend_from_slice(b"ois\nseq1 ACGT\n//\n");
+
+        let rec = StockholmParser::parse(&input).unwrap();
+
+        assert_eq!(rec.id(), Some(&b"FAM1"[..]));
+        assert_eq!(rec.get(b"seq1"), Some(&b"ACGT"[..]));
+
+        let ra = rec.gf_first(b"RA").expect("the author line is kept");
+        assert_eq!(ra.len(), 8, "the byte is held, not replaced");
+        assert!(std::str::from_utf8(ra).is_err());
+
+        // and it survives the way out, so a record read and
+        // written back is not quietly damaged
+        let mut out = Vec::new();
+        rec.write_to(&mut out).unwrap();
+        assert!(out.windows(8).any(|w| w == ra));
+    }
+
+    #[test]
+    fn text_is_asked_for_rather_than_required() {
+        let mut input = b"# STOCKHOLM 1.0\n#=GF ID F".to_vec();
+        input.push(0xF4);
+        input.extend_from_slice(b"M\nseq1 AC\n//\n");
+
+        let rec = StockholmParser::parse(&input).unwrap();
+
+        assert!(rec.id().is_some(), "the id is bytes and is there");
+        assert!(rec.id_str().is_err(), "and reading it as text is the error");
     }
 }

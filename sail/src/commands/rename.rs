@@ -76,7 +76,7 @@ impl RenameArgs {
                 let renamed = (0..collection.len())
                     .map(|n| {
                         let mut record = collection.cloned(n).expect("a counted record");
-                        let was = record.id().unwrap_or_default().as_bytes().to_vec();
+                        let was = record.id().unwrap_or_default().to_vec();
                         let now = rules.apply(&was, n);
 
                         set_id(&mut record, &now)?;
@@ -93,11 +93,7 @@ impl RenameArgs {
                 let renamed = (0..collection.len())
                     .map(|n| {
                         let mut record = collection.cloned(n).expect("a counted record");
-                        let now = rules.apply(record.header.name.as_bytes(), n);
-
-                        record.header.name = String::from_utf8(now).with_context(|| {
-                            format!("record {n}: a profile's NAME is written as text")
-                        })?;
+                        record.header.name = rules.apply(&record.header.name, n);
 
                         Ok(record)
                     })
@@ -179,19 +175,17 @@ impl Rules {
 
 /// Rewrite an alignment's `#=GF ID`, adding one where it had none.
 fn set_id(record: &mut libsail::seq::stockholm::StockholmRecord, name: &[u8]) -> Result<()> {
-    let name = std::str::from_utf8(name)
-        .context("an alignment's #=GF ID is written as text")?
-        .to_string();
+    let name = name.to_vec();
 
     // the record reads its id back out of gf rather than
     // storing it, so renaming means editing that line --
     // nothing else in the record would be written out
-    match record.gf.iter_mut().find(|(feature, _)| feature == "ID") {
+    match record.gf.iter_mut().find(|(feature, _)| feature == b"ID") {
         Some((_, value)) => *value = name,
 
         // in front, because Pfam writes ID first and a reader
         // scanning for it should not have to pass the rest
-        None => record.gf.insert(0, ("ID".to_string(), name)),
+        None => record.gf.insert(0, (b"ID".to_vec(), name)),
     }
 
     Ok(())

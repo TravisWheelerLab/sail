@@ -19,3 +19,15 @@ pub fn name_of(format: Format, record: &[u8]) -> Option<&[u8]> {
         Format::Hmm => p7hmm::name_of(record),
     }
 }
+
+/// Decode `bytes`, naming what they were so a failure says where it happened.
+pub(crate) fn as_str<'a>(bytes: &'a [u8], what: &str) -> crate::Result<&'a str> {
+    match std::str::from_utf8(bytes) {
+        Ok(s) => Ok(s),
+
+        // an error rather than replacement characters: a
+        // mangled name leaves the record unfindable by the
+        // name it has
+        Err(e) => crate::error::bail_parse!("{what} is not valid utf-8: {e}"),
+    }
+}
