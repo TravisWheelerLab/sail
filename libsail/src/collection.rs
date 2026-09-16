@@ -385,6 +385,58 @@ pub trait Indexable {
         parts
     }
 
+    /// `k` views of near-equal total weight, for `k` workers whose cost is not
+    /// the record count. Always exactly `k`, as [`split`](Self::split) is.
+    fn split_weighted<F>(&self, k: usize, mut weight: F) -> Vec<View<&Self>>
+    where
+        Self: Sized,
+        F: FnMut(&Self::Record) -> u64,
+    {
+        let k = k.max(1);
+
+        // materialized once per record rather than once per
+        // comparison, because get may be a read and a parse
+        // on a disk-backed collection
+        let weights: Vec<u64> = (0..self.len())
+            .map(|n| weight(expect_record(self, n).borrow()))
+            .collect();
+
+        // longest-processing-time: the heaviest record goes
+        // first, onto the lightest part so far, which bounds
+        // the worst part at 4/3 of optimal. the sort is
+        // stable, so equal weights stay in file order and one
+        // input always deals the same way
+        let mut order: Vec<usize> = (0..self.len()).collect();
+        order.sort_by(|&a, &b| weights[b].cmp(&weights[a]));
+
+        let mut indices = vec![Vec::new(); k];
+        let mut loads = vec![0u64; k];
+
+        for n in order {
+            // min_by_key reports the first minimum, so a tie
+            // goes to the lowest-numbered part
+            let lightest = (0..k).min_by_key(|&p| loads[p]).expect("k is at least 1");
+
+            loads[lightest] += weights[n];
+            indices[lightest].push(n);
+        }
+
+        indices
+            .into_iter()
+            .map(|mut part| {
+                // the deal ordered these by weight, and a
+                // caller writing a part out wants the order
+                // the file holds them in
+                part.sort_unstable();
+
+                View {
+                    inner: self,
+                    indices: part,
+                }
+            })
+            .collect()
+    }
+
     /// The records gathered by key, each group in file order and the groups in
     /// the order their keys first appear.
     fn group_by<K, F>(&self, mut key: F) -> Vec<(K, View<&Self>)>
@@ -1116,6 +1168,58 @@ mod tests {
             1,
             "a split of zero is a split of one"
         );
+    }
+
+    #[test]
+    fn split_weighted_balances_weight_where_split_balances_count() {
+        // four cheap records and one expensive one, so an
+        // even count is an uneven amount of work
+        let all = nums(0, 5);
+        let cost = |r: &Num| if r.0 == 4 { 10 } else { 1 };
+
+        let parts = all.split_weighted(2, cost);
+        assert_eq!(seen(&parts[0]), [4]);
+        assert_eq!(
+            seen(&parts[1]),
+            [0, 1, 2, 3],
+            "and a part holds its records in file order"
+        );
+
+        let by_count = all.split(2);
+        assert_eq!(seen(&by_count[0]), [0, 1, 2]);
+        assert_eq!(
+            seen(&by_count[1]),
+            [3, 4],
+            "where split leaves the expensive record beside a cheap one"
+        );
+    }
+
+    #[test]
+    fn split_weighted_always_yields_the_number_of_parts_asked_for() {
+        let thin = nums(0, 2);
+        let parts = thin.split_weighted(5, |_| 1);
+
+        assert_eq!(parts.len(), 5, "even where three of them are empty");
+        assert_eq!(parts.iter().map(|p| p.len()).sum::<usize>(), 2);
+        assert_eq!(
+            nums(0, 0).split_weighted(0, |_| 1).len(),
+            1,
+            "a split of zero is a split of one"
+        );
+    }
+
+    #[test]
+    fn equal_weights_deal_the_same_way_every_time() {
+        // a caller seeding a batch of jobs off the parts
+        // gets the same batch from the same input
+        let all = nums(0, 4);
+        let once = all.split_weighted(2, |_| 1);
+        let again = all.split_weighted(2, |_| 1);
+
+        assert_eq!(seen(&once[0]), seen(&again[0]));
+        assert_eq!(seen(&once[1]), seen(&again[1]));
+        assert_eq!(seen(&once[0]), [0, 2]);
+        assert_eq!(seen(&once[1]), [1, 3]);
     }
 
     #[test]

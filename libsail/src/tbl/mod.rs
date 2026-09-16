@@ -93,6 +93,58 @@ fn is_comment(b: u8) -> bool {
     b == b'#'
 }
 
+/// The columns at `want`, borrowed from `row`. `None` where the row holds too
+/// few of them.
+pub fn fields<const K: usize>(row: &[u8], want: [usize; K]) -> Option<[&[u8]; K]> {
+    let mut out = [&row[..0]; K];
+    let mut found = [false; K];
+
+    // nothing asked for is nothing to walk the row for, and
+    // max over no columns has no answer to compare against
+    let Some(&last) = want.iter().max() else {
+        return Some(out);
+    };
+
+    let mut column = 0;
+    let mut at = 0;
+
+    loop {
+        while at < row.len() && row[at].is_ascii_whitespace() {
+            at += 1;
+        }
+
+        if at == row.len() {
+            break;
+        }
+
+        let start = at;
+        while at < row.len() && !row[at].is_ascii_whitespace() {
+            at += 1;
+        }
+
+        // want may name one column more than once, so this
+        // fills every position that asked for it rather than
+        // the first
+        for (i, &w) in want.iter().enumerate() {
+            if w == column {
+                out[i] = &row[start..at];
+                found[i] = true;
+            }
+        }
+
+        // the row past the last wanted column is never read,
+        // which is most of it where a caller wants three of
+        // a domain table's twenty-two
+        if column == last {
+            break;
+        }
+
+        column += 1;
+    }
+
+    found.iter().all(|&f| f).then_some(out)
+}
+
 impl Record for Hit {}
 
 /// Reads a [`Hit`] out of one row, in `C`'s column order.
@@ -1149,5 +1201,48 @@ mod tests {
 
             assert_eq!(reread, want, "{name} did not survive a write and a read");
         }
+    }
+
+    // ---
+
+    #[test]
+    fn fields_borrows_the_columns_asked_for() {
+        let row = b"query1  target1  42.5  1e-10";
+
+        let [q, e] = fields(row, [0, 3]).expect("four columns are there");
+        assert_eq!(q, b"query1");
+        assert_eq!(e, b"1e-10");
+
+        let [only] = fields(row, [2]).expect("column 2 is there");
+        assert_eq!(only, b"42.5");
+    }
+
+    #[test]
+    fn a_run_of_whitespace_separates_one_column_from_the_next() {
+        // hmmer pads its columns to align them, so a row
+        // carries runs of spaces that are one separator
+        let row = b"  query1 \t\t target1    42.5  ";
+
+        let [a, b, c] = fields(row, [0, 1, 2]).expect("three columns are there");
+        assert_eq!((a, b, c), (&b"query1"[..], &b"target1"[..], &b"42.5"[..]));
+    }
+
+    #[test]
+    fn a_row_with_too_few_columns_is_refused_rather_than_padded() {
+        // a table of the wrong tool reads as a short row, and
+        // answering with an empty field would score it
+        let row = b"query1 target1";
+
+        assert!(fields(row, [0, 1]).is_some());
+        assert!(fields(row, [0, 5]).is_none());
+        assert!(fields(b"", [0]).is_none());
+    }
+
+    #[test]
+    fn a_column_asked_for_twice_is_answered_twice() {
+        let row = b"a b c";
+
+        let [x, y, z] = fields(row, [1, 1, 0]).expect("both columns are there");
+        assert_eq!((x, y, z), (&b"b"[..], &b"b"[..], &b"a"[..]));
     }
 }

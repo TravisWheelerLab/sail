@@ -19,7 +19,7 @@
 
 use std::io::Read;
 
-use memchr::memchr_iter;
+use memchr::{memchr, memchr_iter};
 
 use crate::error::Result;
 use crate::index::Offset;
@@ -29,6 +29,193 @@ use crate::index::Offset;
 // matches index::CHUNK so the two framings issue the same
 // number of reads over the same file
 const CHUNK: usize = 64 * 1024;
+
+// ---
+
+/// One line at a time, framed out of a stream, into a buffer reused between
+/// calls. The rows [`line_index`] would have found, without the offsets.
+///
+/// ```no_run
+/// # use libsail::lines::Rows;
+/// # fn main() -> libsail::Result<()> {
+/// let mut rows = Rows::new(std::fs::File::open("hits.tbl")?, |b| b == b'#');
+/// while rows.advance()? {
+///     let row = rows.row();
+///     // ...
+/// }
+/// # Ok(())
+/// # }
+/// ```
+pub struct Rows<R: Read> {
+    source: R,
+    skip: fn(u8) -> bool,
+
+    /// The file's bytes from `base`: `buf[i]` is at file offset `base + i`.
+    buf: Vec<u8>,
+    filled: usize,
+    base: u64,
+
+    /// Where the line after the current one begins in `buf`.
+    cursor: usize,
+
+    /// The current row as a range of `buf`, with no line ending.
+    start: usize,
+    len: usize,
+
+    /// The whole line the row came from, its line ending included.
+    span: usize,
+
+    /// The line `cursor` sits on, counting from 1.
+    at: u64,
+
+    /// The line the current row came from.
+    line: u64,
+
+    eof: bool,
+}
+
+impl<R: Read> Rows<R> {
+    /// Walk the lines of `bytes` that `skip` does not reject. `skip` sees a
+    /// line's first byte, and is not called for an empty line.
+    pub fn new(bytes: R, skip: fn(u8) -> bool) -> Self {
+        Rows {
+            source: bytes,
+            skip,
+            buf: vec![0u8; CHUNK],
+            filled: 0,
+            base: 0,
+            cursor: 0,
+            start: 0,
+            len: 0,
+            span: 0,
+            at: 1,
+            line: 0,
+            eof: false,
+        }
+    }
+
+    /// Walk the lines of `bytes` with a buffer of `chunk` bytes.
+    #[cfg(test)]
+    fn with_chunk(bytes: R, skip: fn(u8) -> bool, chunk: usize) -> Self {
+        let mut rows = Rows::new(bytes, skip);
+        rows.buf = vec![0u8; chunk.max(1)];
+
+        rows
+    }
+
+    /// The current row's bytes, with no line ending. Empty before the first
+    /// [`advance`](Self::advance).
+    pub fn row(&self) -> &[u8] {
+        &self.buf[self.start..self.start + self.len]
+    }
+
+    /// The line the current row came from, counting from 1. Zero before the
+    /// first [`advance`](Self::advance).
+    pub fn line(&self) -> u64 {
+        self.line
+    }
+
+    /// Where the whole line sits in the file, its line ending included, which
+    /// is the [`Offset`] [`line_index`] reports for it.
+    pub fn offset(&self) -> Offset {
+        Offset {
+            start: self.base + self.start as u64,
+            n_bytes: self.span,
+        }
+    }
+
+    /// Advance to the next row. `false` at the end of the stream.
+    pub fn advance(&mut self) -> Result<bool> {
+        loop {
+            match memchr(b'\n', &self.buf[self.cursor..self.filled]) {
+                Some(i) => {
+                    let start = self.cursor;
+                    let end = start + i;
+
+                    self.cursor = end + 1;
+
+                    if self.take(start, end, self.cursor - start) {
+                        return Ok(true);
+                    }
+                }
+
+                // a file whose last line carries no newline
+                None if self.eof => {
+                    let (start, end) = (self.cursor, self.filled);
+                    self.cursor = self.filled;
+
+                    if start == end {
+                        return Ok(false);
+                    }
+
+                    return Ok(self.take(start, end, end - start));
+                }
+
+                None => self.fill()?,
+            }
+        }
+    }
+
+    /// Hold the line at `start..end` as the current row, unless it is empty or
+    /// `skip` rejects it. `span` counts the line ending too.
+    fn take(&mut self, start: usize, end: usize, span: usize) -> bool {
+        let line = self.at;
+        self.at += 1;
+
+        // exactly the line line_index keeps: an empty one is
+        // no line at all, and skip decides the rest from the
+        // first byte. trimming before this would drop a
+        // \r\n line that line_index holds on to
+        if end == start || (self.skip)(self.buf[start]) {
+            return false;
+        }
+
+        // a table written on windows ends its lines \r\n, and
+        // the \r belongs to no column
+        let end = if self.buf[end - 1] == b'\r' {
+            end - 1
+        } else {
+            end
+        };
+
+        self.start = start;
+        self.len = end - start;
+        self.span = span;
+        self.line = line;
+
+        true
+    }
+
+    /// Compact what is spent and read more.
+    fn fill(&mut self) -> Result<()> {
+        if self.eof {
+            return Ok(());
+        }
+
+        if self.cursor > 0 {
+            self.buf.copy_within(self.cursor..self.filled, 0);
+            self.filled -= self.cursor;
+            self.base += self.cursor as u64;
+            self.cursor = 0;
+        } else if self.filled == self.buf.len() {
+            // a line longer than the buffer, so compacting
+            // frees nothing. growing keeps a line spanning k
+            // chunks at O(S) rather than O(S^2/chunk)
+            self.buf.resize(self.buf.len() * 2, 0);
+        }
+
+        let n = crate::index::read_some(&mut self.source, &mut self.buf[self.filled..])?;
+        self.filled += n;
+
+        if n == 0 {
+            self.eof = true;
+        }
+
+        Ok(())
+    }
+}
+
+// ---
 
 /// Index every line of `bytes` that `skip` does not reject, in file order.
 /// `skip` sees a line's **first byte**, and is not called for an empty line.
@@ -312,5 +499,104 @@ mod tests {
             next = o.start + o.n_bytes as u64;
         }
         assert_eq!(next as usize, input.len());
+    }
+
+    // ---
+
+    #[test]
+    fn rows_frame_what_line_index_finds_on_every_fixture() {
+        // two independent readings of one file: line_index
+        // collects every offset in a pass, Rows hands them
+        // over one at a time, and a disagreement is a
+        // framing bug in whichever moved
+        for name in [
+            "hits.blast.tbl",
+            "hits.hmmer.tblout",
+            "hits.hmmer.domtblout",
+            "hits.nail.tbl",
+        ] {
+            let path = format!("{}/../fixtures/{name}", env!("CARGO_MANIFEST_DIR"));
+            let bytes = std::fs::read(&path).unwrap();
+            let want = line_index(&bytes[..], hash).unwrap();
+
+            // every chunk size puts the boundary somewhere
+            // else, and one byte at a time puts it between
+            // every pair
+            for chunk in [1, 2, 7, 64, 4096] {
+                let mut rows = Rows::with_chunk(&bytes[..], hash, chunk);
+                let mut got = Vec::new();
+
+                while rows.advance().unwrap() {
+                    got.push(rows.offset());
+                }
+
+                assert_eq!(got, want, "{name} framed differently at chunk {chunk}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_row_carries_neither_its_newline_nor_a_windows_return() {
+        let input = b"a b\r\nc d\n";
+        let mut rows = Rows::new(&input[..], hash);
+
+        assert!(rows.advance().unwrap());
+        assert_eq!(rows.row(), b"a b");
+        assert_eq!(rows.offset().n_bytes, 5, "though the offset spans both");
+
+        assert!(rows.advance().unwrap());
+        assert_eq!(rows.row(), b"c d");
+        assert!(!rows.advance().unwrap());
+    }
+
+    #[test]
+    fn a_last_line_with_no_newline_is_still_a_row() {
+        let mut rows = Rows::new(&b"a\nb"[..], hash);
+
+        assert!(rows.advance().unwrap());
+        assert!(rows.advance().unwrap());
+        assert_eq!(rows.row(), b"b");
+        assert!(!rows.advance().unwrap());
+    }
+
+    #[test]
+    fn a_comment_partway_down_is_skipped_like_one_at_the_head() {
+        // tables concatenated from shards repeat their
+        // header, so a reader that skipped only a leading
+        // block would parse those as rows
+        let input = b"# head\na 1\n\n# again\nb 2\n";
+        let mut rows = Rows::new(&input[..], hash);
+
+        assert!(rows.advance().unwrap());
+        assert_eq!(rows.row(), b"a 1");
+        assert_eq!(rows.line(), 2);
+
+        assert!(rows.advance().unwrap());
+        assert_eq!(rows.row(), b"b 2");
+        assert_eq!(rows.line(), 5, "the line counts lines and not rows");
+
+        assert!(!rows.advance().unwrap());
+    }
+
+    #[test]
+    fn a_row_longer_than_the_buffer_is_still_one_row() {
+        let long = "x".repeat(10_000);
+        let input = format!("a\n{long}\nb\n");
+        let mut rows = Rows::with_chunk(input.as_bytes(), hash, 8);
+
+        assert!(rows.advance().unwrap());
+        assert!(rows.advance().unwrap());
+        assert_eq!(rows.row().len(), 10_000);
+
+        assert!(rows.advance().unwrap());
+        assert_eq!(rows.row(), b"b");
+    }
+
+    #[test]
+    fn nothing_rejected_means_every_line_is_a_row() {
+        let mut rows = Rows::new(&b"# not a comment here\na\n"[..], all);
+
+        assert!(rows.advance().unwrap());
+        assert_eq!(rows.row(), b"# not a comment here");
     }
 }
