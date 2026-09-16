@@ -33,7 +33,7 @@ the shared traits.
 | `collection.rs` | `Indexable`/`Iterable`, the `View`/`Iter`/`Aggregate` adapters, every combinator |
 | `error.rs` | `Error`, `ErrorKind`, `bail_parse!` |
 | `format.rs` | `Format` and `detect`/`detect_path` |
-| `index.rs` | `Delimit`, `scan`/`frame`/`Offset`, `Index` and the `.saidx` sidecar, the streaming `Reader` |
+| `index.rs` | `Delimit`, `scan`/`frame`/`Offset`, `Index` and the `.saidx` file, the streaming `Reader` |
 | `lines.rs` | row framing for hit tables |
 | `parse.rs` | the `Parse` trait |
 | `pread.rs` | positioned reads, private |
@@ -98,7 +98,7 @@ hand.
 The indexed types are `cfg(any(unix, windows))`, and the `Mmap*` ones are
 further behind the `mmap` feature.
 
-### `Index` and the `.saidx` sidecar
+### `Index` and the `.saidx` file
 
 `Index` holds a format, a vector of offsets, and an optional names layer: a blob
 of concatenated name bytes, a span per record, and a sorted permutation for
@@ -111,7 +111,7 @@ all little-endian. No length read from the file is allocated against until the
 bytes back it, and a truncated file is always an error rather than a panic.
 
 `save` stamps the source's length and mtime and writes through a temporary file
-and a rename; `load` re-stats the source and refuses a sidecar that disagrees.
+and a rename; `load` re-stats the source and refuses an index file that disagrees.
 This catches ordinary edits, not all of them: a same-size change within one
 mtime tick goes undetected, which is a known gap rather than an oversight.
 `path_for` appends `.saidx` rather than substituting, so `.fa` and `.sto`

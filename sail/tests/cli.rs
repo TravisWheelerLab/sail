@@ -432,17 +432,17 @@ fn split_writes_the_parts_it_says_it_does() {
 }
 
 #[test]
-fn index_writes_a_sidecar_that_loads_back() {
+fn index_writes_an_index_file_that_loads_back() {
     let s = Scratch::new("index");
     let path = s.write("in.fa", b">a\nAAAA\n>b\nCCCC\n");
 
     let run = sail(&["index", &path], b"");
     assert!(run.ok, "{}", run.stderr);
 
-    let sidecar = format!("{path}.saidx");
+    let index_file = format!("{path}.saidx");
     assert!(
-        Path::new(&sidecar).exists(),
-        "index wrote no sidecar beside the input"
+        Path::new(&index_file).exists(),
+        "index wrote no index file beside the input"
     );
 
     // matched on the count rather than the wording, so
