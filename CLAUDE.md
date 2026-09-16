@@ -235,6 +235,11 @@ instance `a_delimiter_mid_line_is_not_a_record_boundary`,
 time because cargo runs a test binary from the package root rather than the
 workspace root.
 
+**Working notes.** `API-CHANGES.md` and `CLI-CHANGES.md` are scratch. They hold
+proposals being thought through, they are not tracked, and they are never
+committed. Provenance lives in commit messages and in the code, so a proposal
+here can be rewritten or thrown away without ceremony.
+
 **Benchmarks.** `benchmarks/` is a separate cargo project, not a workspace
 member, and is not tracked. Its `setup.sh` fetches pinned builds of seqkit and
 the Easel miniapps into `benchmarks/tools`, and nothing is installed outside
