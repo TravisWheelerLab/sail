@@ -235,6 +235,13 @@ instance `a_delimiter_mid_line_is_not_a_record_boundary`,
 time because cargo runs a test binary from the package root rather than the
 workspace root.
 
+**Versions.** Each crate is versioned by what changed in it, and the two are
+never aligned for tidiness. A break in `libsail` moves `libsail`'s minor, under
+cargo's rule that 0.x's minor is the breaking axis, and moves nothing in `sail`
+unless `sail`'s own interface changed. For the CLI that interface is the command
+line and what each subcommand writes, not the library underneath, and
+`sail/tests/cli.rs` is what says whether it moved.
+
 **Working notes.** `API-CHANGES.md` and `CLI-CHANGES.md` are scratch. They hold
 proposals being thought through, they are not tracked, and they are never
 committed. Provenance lives in commit messages and in the code, so a proposal
