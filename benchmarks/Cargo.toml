@@ -1,0 +1,35 @@
+[workspace]
+
+[package]
+name = "benchmarks"
+version = "0.1.0"
+edition = "2024"
+publish = false
+default-run = "benchmarks"
+
+[dependencies]
+libsail = { path = "../libsail", features = ["mmap"] }
+clap = { version = "4", features = ["derive"] }
+michi = "0.1.0"
+anyhow = "1.0.104"
+memchr = "2.8"
+rand = "0.10.2"
+
+[[bin]]
+name = "index"
+path = "bin/index.rs"
+
+[[bin]]
+name = "sample"
+path = "bin/sample.rs"
+
+[[bin]]
+name = "mmap"
+path = "bin/mmap.rs"
+
+[[bin]]
+name = "synth"
+path = "bin/synth.rs"
+
+[profile.release]
+debug = true

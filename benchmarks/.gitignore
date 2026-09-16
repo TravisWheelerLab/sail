@@ -1,0 +1,9 @@
+# build output
+target/
+
+# the generated fixture, the tables, and the captured stderr
+runs/
+
+# seqkit and the easel miniapps, fetched by setup.sh at pinned
+# versions. binaries, and reproducible from the script
+tools/
