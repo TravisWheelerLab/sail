@@ -893,16 +893,16 @@ mod tests {
 
     #[test]
     fn permute_keeps_every_record_exactly_once() {
-        let mut shuffled = names(&three().permute());
+        let mut shuffled = names(&three().permute(0));
         shuffled.sort();
         assert_eq!(shuffled, ["a", "b", "c"]);
     }
 
     #[test]
     fn sample_returns_as_many_records_as_asked_for() {
-        assert_eq!(three().sample(2).len(), 2);
-        assert_eq!(three().sample(0).len(), 0);
-        assert_eq!(three().sample(3).len(), 3, "all of them is still valid");
+        assert_eq!(three().sample(2, 0).len(), 2);
+        assert_eq!(three().sample(0, 0).len(), 0);
+        assert_eq!(three().sample(3, 0).len(), 3, "all of them is still valid");
     }
 
     #[test]
@@ -1117,7 +1117,7 @@ mod tests {
         let disk = IndexedFasta::open(&path).unwrap();
 
         assert_eq!(names(&disk), ["a", "b", "c"]);
-        assert_eq!((&disk).sample(2).len(), 2);
+        assert_eq!((&disk).sample(2, 0).len(), 2);
 
         // through &disk, so one open file feeds every adapter
         // rather than each one needing its own
@@ -1159,7 +1159,7 @@ mod tests {
         assert_eq!(names(&mapped), ["a", "b", "c"]);
 
         // SAFETY: as above
-        let sorted = unsafe { MmapFasta::map(&path) }.unwrap().sample(2);
+        let sorted = unsafe { MmapFasta::map(&path) }.unwrap().sample(2, 0);
         assert_eq!(sorted.len(), 2, "the combinators reach it too");
 
         std::fs::remove_file(path).ok();

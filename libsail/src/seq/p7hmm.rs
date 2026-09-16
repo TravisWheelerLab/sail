@@ -1454,7 +1454,7 @@ mod tests {
             .unwrap()
             .sort_by_key(|r| std::cmp::Reverse(r.header.name.clone()));
         assert_eq!(names(&by_name), [b"other".to_vec(), b"demo".to_vec()]);
-        assert_eq!(Hmm::new(&bytes[..]).unwrap().sample(2).len(), 2);
+        assert_eq!(Hmm::new(&bytes[..]).unwrap().sample(2, 0).len(), 2);
     }
 
     #[test]
@@ -1668,7 +1668,7 @@ mod tests {
         assert_eq!(names(&mapped), [b"demo".to_vec(), b"other".to_vec()]);
 
         // SAFETY: as above
-        let sorted = unsafe { MmapHmm::map(&path) }.unwrap().sample(2);
+        let sorted = unsafe { MmapHmm::map(&path) }.unwrap().sample(2, 0);
         assert_eq!(sorted.len(), 2, "the combinators reach it too");
 
         std::fs::remove_file(path).ok();

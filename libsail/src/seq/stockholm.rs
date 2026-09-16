@@ -1023,8 +1023,8 @@ seq9     GGGG
 
         let by_depth = two().sort_by_key(|r| r.depth());
         assert_eq!(ids(&by_depth), ["FAM2", "FAM1"], "one row, then two");
-        assert_eq!(two().sample(2).len(), 2);
-        assert_eq!(two().permute().len(), 2);
+        assert_eq!(two().sample(2, 0).len(), 2);
+        assert_eq!(two().permute(0).len(), 2);
     }
 
     #[test]
@@ -1241,7 +1241,7 @@ seq9     GGGG
         assert_eq!(ids(&mapped), ["FAM1", "FAM2"]);
 
         // SAFETY: as above
-        let sorted = unsafe { MmapStockholm::map(&path) }.unwrap().sample(2);
+        let sorted = unsafe { MmapStockholm::map(&path) }.unwrap().sample(2, 0);
         assert_eq!(sorted.len(), 2, "the combinators reach it too");
 
         std::fs::remove_file(path).ok();

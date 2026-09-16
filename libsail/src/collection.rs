@@ -2,18 +2,21 @@
 //!
 //! [`Indexable`] is the whole of what an implementor writes — a length and a
 //! `get` — and the rest is built on it: [`Iterable`] by blanket impl, and
-//! `filter`/`permute`/`sort_by` through [`View`], which reorders a
-//! permutation of indices and leaves the records themselves alone.
+//! `filter`/`sort_by`/`take` through [`View`], which reorders a permutation of
+//! indices and leaves the records themselves alone.
 //!
-//! [`Aggregate`] is the other adapter: several collections addressed as one.
+//! [`Drawn`] is the other reordering. `permute` and `sample` compute their
+//! permutation from a seed instead of storing one, so they allocate the same
+//! amount at any length.
+//!
+//! [`Aggregate`] is the last adapter: several collections addressed as one.
 
 use std::borrow::Borrow;
 use std::collections::HashMap;
 use std::hash::Hash;
 
+use feisty::Permutation;
 use indexmap::IndexMap;
-use rand::Rng;
-use rand::seq::SliceRandom;
 
 use crate::Record;
 
@@ -48,6 +51,70 @@ where
 
     fn get(&self, n: usize) -> Option<Self::Yield<'_>> {
         self.indices.get(n).and_then(|&x| self.inner.get(x))
+    }
+}
+
+/// Another collection read through a permutation of `0..len()`, and how much of
+/// that permutation this holds.
+pub struct Drawn<I>
+where
+    I: Indexable,
+{
+    inner: I,
+
+    /// The permutation, computed from a seed rather than stored.
+    //
+    // None only where inner is empty: feistel networks are
+    // built over a non-empty domain, and an empty
+    // collection has no position to map
+    perm: Option<Permutation<usize>>,
+
+    /// How many of the permuted positions this holds, counting from the front.
+    //
+    // a prefix, so two draws from one collection under one
+    // seed nest: the smaller is a subset of the larger
+    len: usize,
+}
+
+impl<I> Drawn<I>
+where
+    I: Indexable,
+{
+    /// The first `len` positions of `seed`'s permutation of `inner`.
+    fn new(inner: I, len: usize, seed: u64) -> Self {
+        let n = inner.len();
+
+        Drawn {
+            inner,
+            perm: (n > 0).then(|| Permutation::new(n, seed)),
+            len,
+        }
+    }
+}
+
+impl<I> Indexable for Drawn<I>
+where
+    I: Indexable,
+{
+    type Record = I::Record;
+    type Yield<'a>
+        = I::Yield<'a>
+    where
+        Self: 'a;
+
+    fn len(&self) -> usize {
+        self.len
+    }
+
+    fn get(&self, n: usize) -> Option<Self::Yield<'_>> {
+        // Permutation::get asserts its argument is inside
+        // the domain, so the bound is checked here rather
+        // than left to panic out of the mapping
+        if n >= self.len {
+            return None;
+        }
+
+        self.inner.get(self.perm.as_ref()?.get(n))
     }
 }
 
@@ -199,34 +266,26 @@ pub trait Indexable {
         map
     }
 
-    /// `n` records drawn uniformly at random without replacement.
+    /// `m` records drawn uniformly at random without replacement, in the order
+    /// `seed`'s permutation puts them.
     ///
     /// # Panics
     ///
-    /// If `n > len()`. Sampling without replacement cannot return more records
-    /// than there are, and the underlying `rand` routine treats asking for more
-    /// as a bug rather than clamping.
-    fn sample(self, n: usize) -> View<Self>
+    /// If `m > len()`. A draw without replacement cannot return more records
+    /// than there are, and asking for more is a bug rather than a request to
+    /// clamp.
+    fn sample(self, m: usize, seed: u64) -> Drawn<Self>
     where
         Self: Sized,
     {
-        self.sample_with(&mut rand::rng(), n)
-    }
+        assert!(
+            m <= self.len(),
+            "sample({m}) from a collection of {} -- a draw without replacement \
+             cannot return more records than there are",
+            self.len()
+        );
 
-    /// [`sample`](Self::sample) from `rng`, so a run reproduces.
-    fn sample_with<R>(self, rng: &mut R, n: usize) -> View<Self>
-    where
-        Self: Sized,
-        R: Rng + ?Sized,
-    {
-        use rand::seq::index::sample;
-
-        let indices = sample(rng, self.len(), n).into_vec();
-
-        View {
-            inner: self,
-            indices,
-        }
+        Drawn::new(self, m, seed)
     }
 
     /// The records for which `predicate` holds, in their original order.
@@ -271,27 +330,15 @@ pub trait Indexable {
         }
     }
 
-    /// The same records in a uniformly random order.
-    fn permute(self) -> View<Self>
+    /// The same records in the order `seed`'s permutation puts them, which is
+    /// [`sample`](Self::sample) of all of them.
+    fn permute(self, seed: u64) -> Drawn<Self>
     where
         Self: Sized,
     {
-        self.permute_with(&mut rand::rng())
-    }
+        let len = self.len();
 
-    /// [`permute`](Self::permute) from `rng`, so a run reproduces.
-    fn permute_with<R>(self, rng: &mut R) -> View<Self>
-    where
-        Self: Sized,
-        R: Rng + ?Sized,
-    {
-        let mut indices: Vec<usize> = (0..self.len()).collect();
-        indices.shuffle(rng);
-
-        View {
-            inner: self,
-            indices,
-        }
+        Drawn::new(self, len, seed)
     }
 
     /// The records ordered by `cmp`, materializing both at every comparison.
@@ -811,7 +858,7 @@ mod tests {
             // so the walk is what has to be loud
             (
                 "sample",
-                std::panic::catch_unwind(|| Gappy.sample(3).iter().count()),
+                std::panic::catch_unwind(|| Gappy.sample(3, 0).iter().count()),
             ),
             (
                 "sort_by_key",
@@ -972,7 +1019,9 @@ mod tests {
         );
 
         assert_eq!(
-            Aggregate::new([part(0, 3), part(100, 3)]).sample(4).len(),
+            Aggregate::new([part(0, 3), part(100, 3)])
+                .sample(4, 0)
+                .len(),
             4
         );
     }
@@ -1084,14 +1133,8 @@ mod tests {
     }
 
     #[test]
-    fn a_seeded_sample_reproduces_and_an_unseeded_one_need_not() {
-        use rand::SeedableRng;
-        use rand::rngs::StdRng;
-
-        let drawn = |seed: u64| {
-            let mut rng = StdRng::seed_from_u64(seed);
-            seen(&(&nums(0, 100)).sample_with(&mut rng, 10))
-        };
+    fn a_sample_reproduces_from_its_seed_and_a_different_seed_draws_differently() {
+        let drawn = |seed: u64| seen(&(&nums(0, 100)).sample(10, seed));
 
         assert_eq!(drawn(7), drawn(7), "the same seed draws the same records");
         assert_eq!(drawn(7).len(), 10);
@@ -1099,20 +1142,55 @@ mod tests {
     }
 
     #[test]
-    fn a_seeded_permutation_reproduces() {
-        use rand::SeedableRng;
-        use rand::rngs::StdRng;
-
-        let shuffled = |seed: u64| {
-            let mut rng = StdRng::seed_from_u64(seed);
-            seen(&(&nums(0, 20)).permute_with(&mut rng))
-        };
+    fn a_permutation_reproduces_from_its_seed_and_holds_every_record_once() {
+        let shuffled = |seed: u64| seen(&(&nums(0, 20)).permute(seed));
 
         assert_eq!(shuffled(3), shuffled(3));
 
         let mut sorted = shuffled(3);
         sorted.sort();
         assert_eq!(sorted, (0..20).collect::<Vec<_>>(), "every record, once");
+    }
+
+    #[test]
+    fn a_sample_is_a_prefix_of_a_larger_one_drawn_under_the_same_seed() {
+        // what a computed permutation gives that a shuffled
+        // vector of indices does not: growing the draw keeps
+        // everything the smaller one held
+        let all = nums(0, 100);
+        let small = seen(&(&all).sample(10, 7));
+        let large = seen(&(&all).sample(40, 7));
+
+        assert_eq!(small, large[..10]);
+    }
+
+    #[test]
+    fn a_sample_of_every_record_is_the_permutation_itself() {
+        let all = nums(0, 20);
+
+        assert_eq!(seen(&(&all).sample(20, 5)), seen(&(&all).permute(5)));
+    }
+
+    #[test]
+    fn drawing_from_an_empty_collection_is_empty_rather_than_a_panic() {
+        // a feistel network is built over a non-empty
+        // domain, so an empty collection has to be caught
+        // before one is asked for
+        assert_eq!(nums(0, 0).permute(1).len(), 0);
+        assert_eq!(seen(&nums(0, 0).sample(0, 1)), []);
+    }
+
+    #[test]
+    fn a_position_past_the_end_of_a_draw_is_none_rather_than_a_panic() {
+        // Permutation::get asserts rather than answering,
+        // so Drawn has to bound the call itself
+        assert!(nums(0, 20).sample(5, 1).get(5).is_none());
+        assert!(nums(0, 20).permute(1).get(20).is_none());
+    }
+
+    #[test]
+    fn drawing_more_records_than_there_are_panics() {
+        assert!(std::panic::catch_unwind(|| nums(0, 3).sample(4, 1)).is_err());
     }
 
     #[test]

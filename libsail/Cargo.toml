@@ -17,6 +17,6 @@ mmap = ["dep:memmap2"]
 
 [dependencies]
 indexmap = "2.10.0"
-rand = "0.10.2"
+feisty = "0.1.0"
 memchr = "2.8"
 memmap2 = { version = "0.9.11", optional = true }

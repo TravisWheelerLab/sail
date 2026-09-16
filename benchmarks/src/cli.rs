@@ -43,8 +43,6 @@ struct Tool {
 
     /// The command, for this fixture.
     argv: fn(&Path) -> Cmd,
-
-
 }
 
 /// One comparable operation.
@@ -55,10 +53,8 @@ struct Op {
     /// because a reader who cannot check the claim cannot read the numbers.
     same_work: &'static str,
 
-
     tools: &'static [Tool],
 }
-
 
 // --- the operations
 
@@ -157,7 +153,6 @@ fn names() -> Op {
         ],
     }
 }
-
 
 /// Parsing every record and writing it back out.
 fn reformat() -> Op {
@@ -364,14 +359,6 @@ const MIN_RESIDUES: usize = 500;
 
 // --- output readers
 
-
-
-
-
-
-
-
-
 // --- the peer tools
 
 /// Where `setup.sh` puts the tools sail is measured against.
@@ -431,8 +418,6 @@ fn build_sail() -> Cmd {
 }
 
 // --- pipeline pieces
-
-
 
 /// One unrecorded run of each tool.
 fn warmup(op: &Op, fasta: &Path) -> Step {
@@ -511,7 +496,10 @@ pub(crate) fn run(which: Option<&str>, o: &Opts) -> anyhow::Result<()> {
             let found: Vec<&Op> = all.iter().filter(|op| op.name == name).collect();
             if found.is_empty() {
                 let known: Vec<&str> = all.iter().map(|op| op.name).collect();
-                bail!("no comparison called {name:?}; there is {}", known.join(", "))
+                bail!(
+                    "no comparison called {name:?}; there is {}",
+                    known.join(", ")
+                )
             }
 
             found
@@ -540,13 +528,21 @@ pub(crate) fn run(which: Option<&str>, o: &Opts) -> anyhow::Result<()> {
 
     let plan: Vec<(&'static str, &'static str, Vec<&'static str>)> = chosen
         .iter()
-        .map(|op| (op.name, op.same_work, op.tools.iter().map(|t| t.name).collect()))
+        .map(|op| {
+            (
+                op.name,
+                op.same_work,
+                op.tools.iter().map(|t| t.name).collect(),
+            )
+        })
         .collect();
 
     let board = Board::new(&plan, header, "sail", o.repeat);
     let painter = board.start();
 
-    let ran = chosen.iter().try_for_each(|op| one(op, &fixture, &board, o));
+    let ran = chosen
+        .iter()
+        .try_for_each(|op| one(op, &fixture, &board, o));
 
     // the thread lets go of stdout before anything else
     // writes to it, including the error that stopped the run
@@ -557,7 +553,6 @@ pub(crate) fn run(which: Option<&str>, o: &Opts) -> anyhow::Result<()> {
 
     Ok(())
 }
-
 
 fn one(op: &Op, fixture: &Fixture, board: &Board, o: &Opts) -> anyhow::Result<()> {
     let out = o.out();
@@ -579,4 +574,3 @@ fn one(op: &Op, fixture: &Fixture, board: &Board, o: &Opts) -> anyhow::Result<()
 
     Ok(())
 }
-

@@ -898,7 +898,7 @@ mod tests {
 
         let strong = two().filter(|h| h.e_value < 1e-6);
         assert_eq!(queries(&strong), ["q1"]);
-        assert_eq!(two().sample(2).len(), 2);
+        assert_eq!(two().sample(2, 0).len(), 2);
     }
 
     // ---

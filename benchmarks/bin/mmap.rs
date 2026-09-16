@@ -46,6 +46,10 @@ use libsail::seq::fasta::{FastaRecord, IndexedFasta, MmapFasta};
 // 1.66x per get it is
 const SAMPLE: usize = 1_000_000;
 
+/// The seed every run draws under, so two runs read the same records and the
+/// numbers are comparable.
+const SEED: u64 = 0x5A11;
+
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let [sub, path] = args.as_slice() else {
@@ -110,7 +114,7 @@ where
         return Err(format!("{total} records, need {SAMPLE} to sample").into());
     }
 
-    let drawn = c.sample(SAMPLE);
+    let drawn = c.sample(SAMPLE, SEED);
 
     if drawn.len() != SAMPLE {
         return Err(format!("sampled {} records, expected {SAMPLE}", drawn.len()).into());

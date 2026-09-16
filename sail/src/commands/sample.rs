@@ -3,8 +3,6 @@ use std::path::PathBuf;
 use anyhow::{Result, bail};
 use clap::Args;
 use libsail::collection::{Indexable, Iterable};
-use rand::SeedableRng;
-use rand::rngs::StdRng;
 
 use crate::cli::FormatArg;
 use crate::input::{Inputs, dispatch};
@@ -42,22 +40,17 @@ impl SampleArgs {
         let inputs = Inputs::read(std::slice::from_ref(&self.input), self.format)?;
         let entry = &inputs.entries()[0];
         let out = writer(self.output.as_deref())?;
-        let (count, fraction, seed) = (self.count, self.fraction, self.seed);
+        let (count, fraction) = (self.count, self.fraction);
+
+        // an unseeded run picks a seed rather than taking a
+        // second code path: a draw that ends up in a paper
+        // has to reproduce, and libsail has one draw
+        let seed = self.seed.unwrap_or_else(rand::random);
 
         dispatch!(inputs.format(), entry, |collection, _size, _name, write| {
             let n = draw_size(count, fraction, collection.len())?;
 
-            // sample_with rather than sample, always: a draw
-            // that ends up in a paper has to reproduce, and
-            // one rng type either way means an unseeded run
-            // seeds itself from the thread generator rather
-            // than taking a second code path
-            let mut rng = match seed {
-                Some(seed) => StdRng::seed_from_u64(seed),
-                None => StdRng::from_rng(&mut rand::rng()),
-            };
-
-            emit(collection.sample_with(&mut rng, n).iter(), write, out)
+            emit(collection.sample(n, seed).iter(), write, out)
         })
     }
 }

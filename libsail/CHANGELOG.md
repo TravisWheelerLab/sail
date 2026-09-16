@@ -9,6 +9,44 @@ cargo's reading of it below 1.0: the **minor** is the breaking axis, so 0.2 to
 
 ## [Unreleased]
 
+`permute` and `sample` compute their permutation from a seed instead of storing
+one, which drops the `rand` dependency and makes a draw cost the same at any
+length. The order records are read in is unchanged, and still the
+permutation's. Allocation is the whole of the saving; the reads are as scattered
+as they were.
+
+### Added
+
+- `collection::Drawn<I>`, what `permute` and `sample` now return. Holds a
+  `feisty::Permutation` over `0..len()` and a count of how many of its positions
+  to keep. Allocates nothing per record. `permute_with` over 2.4 billion
+  records built a 19.6 GB vector of indices before reading anything; `Drawn`
+  builds a key.
+
+### Changed
+
+- `Indexable::permute(seed)` and `Indexable::sample(m, seed)` replace
+  `permute`, `permute_with`, `sample` and `sample_with`. Both return
+  `Drawn<Self>` where the old four returned `View<Self>`, and both take a `u64`
+  where the `_with` pair took an `R: Rng`, so a draw reproduces from its
+  recorded seed alone rather than from every prior use of a generator.
+- A seed is required: the unseeded `permute()` and `sample(n)` are gone. With
+  one variant of each combinator there is no `_with` suffix left to
+  disambiguate.
+- `sample(m, seed)` keeps the first `m` positions of `permute(seed)`, so two
+  draws from one collection under one seed nest — the smaller is a subset of the
+  larger. Two draws through `rand` were unrelated.
+- A draw is now one of the 2^64 permutations a `u64` can key, where shuffling
+  through a `ChaCha`-backed generator could reach far more of them. `sail`
+  already funnelled `--seed` through `seed_from_u64`, so it never had more than
+  2^64 either.
+
+### Removed
+
+- The `rand` dependency, and with it seven crates from every downstream build.
+  `feisty` has none of its own. What a seed reproduces is now fixed by feisty's
+  `DEFAULT_ROUNDS` and round function rather than by `rand`'s version.
+
 ## [0.3.0] - 2026-09-16
 
 Records hold their text as bytes, an index can leave its offsets on disk, and a

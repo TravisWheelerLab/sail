@@ -33,7 +33,6 @@ mod api;
 mod board;
 mod cli;
 
-
 // ---
 
 #[derive(Parser)]
@@ -92,7 +91,6 @@ fn main() -> anyhow::Result<()> {
     }
 }
 
-
 /// Remove every index a previous repeat left.
 //
 // without this the second run of `seqkit faidx` reads the
@@ -130,11 +128,6 @@ pub(crate) fn ensure_fixture(fixture: &Fixture, out: &Path, o: &Opts) -> anyhow:
     Ok(())
 }
 
-// --- the benchmarks
-
-
-
-
 // --- pipeline pieces
 
 /// Where a built binary lands.
@@ -166,9 +159,6 @@ pub(crate) fn build(bins: &[&str]) -> Cmd {
 pub(crate) fn synth(fasta: &Path) -> Cmd {
     Cmd::new(binary("synth")).name("synth").path(fasta)
 }
-
-
-
 
 // --- the fixture
 
@@ -202,7 +192,6 @@ impl Fixture {
     fn counts_path(&self) -> PathBuf {
         self.beside("counts")
     }
-
 
     fn beside(&self, extension: &str) -> PathBuf {
         Fixture::beside_path(&self.fasta, extension)
@@ -257,14 +246,7 @@ impl Drop for Fixture {
     }
 }
 
-// --- the gate
-
-
-
-
-
-
-
+// --- formatting
 
 pub(crate) fn ms(s: f64) -> String {
     format!("{:.2} ms", s * 1000.0)

@@ -10,6 +10,17 @@ underneath, so `sail` and `libsail` move independently.
 
 ## [Unreleased]
 
+### Changed
+
+- `shuffle` and `sample` write a different order for a given `--seed`. libsail
+  computes the permutation from the seed now rather than shuffling a vector of
+  indices, so a given seed picks different records. The flags are unchanged, a
+  draw is still `-n` distinct records taken without replacement, and the memory
+  it costs no longer grows with the input.
+- `--seed` is the seed itself. Both commands used to build a generator from it
+  and hand that over; they pass the number straight through now, and an
+  unseeded run picks one `u64` for itself.
+
 ## [0.2.1] - 2026-09-16
 
 ### Changed

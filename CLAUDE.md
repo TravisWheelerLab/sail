@@ -30,7 +30,7 @@ the shared traits.
 
 | module | owns |
 | --- | --- |
-| `collection.rs` | `Indexable`/`Iterable`, the `View`/`Iter`/`Aggregate` adapters, every combinator |
+| `collection.rs` | `Indexable`/`Iterable`, the `View`/`Drawn`/`Iter`/`Aggregate` adapters, every combinator |
 | `error.rs` | `Error`, `ErrorKind`, `bail_parse!` |
 | `format.rs` | `Format` and `detect`/`detect_path` |
 | `index.rs` | `Delimit`, `scan`/`frame`/`Offset`, `Index` and the `.saidx` file, the streaming `Reader` |
@@ -122,11 +122,21 @@ out of the reader's own buffer instead of going back to the file.
 
 ### combinators
 
-Every combinator is a default method on `Indexable`, and every one is eager: it
+Every combinator is a default method on `Indexable`, and most are eager: one
 walks `0..len()` once, builds a vector of indices, and returns a `View<I>`
 holding the inner collection and that permutation. `View` is itself `Indexable`,
 so combinators chain. `&I` is `Indexable` too, which is what lets one collection
 be adapted more than once without being consumed or reopened.
+
+`permute` and `sample` are the exception. Both return `Drawn<I>`, which holds a
+`feisty::Permutation` over `0..len()` and a count of how many of its positions to
+keep, so neither allocates a vector. `permute(seed)` keeps every position and
+`sample(m, seed)` keeps the first `m`, so two draws from one collection under one
+seed nest: the smaller is a subset of the larger. Both take a `u64` rather than
+an `Rng`, so a draw reproduces from its recorded seed alone rather than from
+every prior use of a generator. The reads are no less scattered for it — `Drawn`
+hands positions back in the permutation's order — so this buys allocation, not
+locality.
 
 Sorting and grouping materialize the key once per record rather than per
 comparison, because `get` may be a disk read and a parse. `group_by` returns an
@@ -235,12 +245,24 @@ instance `a_delimiter_mid_line_is_not_a_record_boundary`,
 time because cargo runs a test binary from the package root rather than the
 workspace root.
 
+**Branches.** All work is committed on `dev`, in batches. `main` takes a merge
+only when a release is being cut, so it holds nothing unpublished. Do not branch
+off `dev` unless asked to.
+
 **Versions.** Each crate is versioned by what changed in it, and the two are
 never aligned for tidiness. A break in `libsail` moves `libsail`'s minor, under
 cargo's rule that 0.x's minor is the breaking axis, and moves nothing in `sail`
 unless `sail`'s own interface changed. For the CLI that interface is the command
 line and what each subcommand writes, not the library underneath, and
 `sail/tests/cli.rs` is what says whether it moved.
+
+**Dependencies.** `libsail` takes `indexmap`, `memchr` and `feisty`, plus
+`memmap2` behind the `mmap` feature. `feisty` replaced `rand`, which was there
+only to shuffle a vector of indices and to seed the unseeded `permute()` and
+`sample()`, both now removed; it has no dependencies of its own where `rand`
+pulled seven. `sail` still takes `rand`, for the one `u64` it draws when
+`--seed` is absent. `std::hash::RandomState` would cover that call if the
+dependency is ever worth dropping.
 
 **Working notes.** `API-CHANGES.md` and `CLI-CHANGES.md` are scratch. They hold
 proposals being thought through, they are not tracked, and they are never

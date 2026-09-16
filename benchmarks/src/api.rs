@@ -100,7 +100,10 @@ pub(crate) fn run(which: Option<&str>, o: &Opts) -> anyhow::Result<()> {
             let found: Vec<&Bench> = all.iter().filter(|b| b.name == name).collect();
             if found.is_empty() {
                 let known: Vec<&str> = all.iter().map(|b| b.name).collect();
-                bail!("no benchmark called {name:?}; there is {}", known.join(", "))
+                bail!(
+                    "no benchmark called {name:?}; there is {}",
+                    known.join(", ")
+                )
             }
 
             found
@@ -158,8 +161,8 @@ fn one(bench: &Bench, fixture: &Fixture, board: &Board, o: &Opts) -> anyhow::Res
         .step(warmup(bench, &fixture.fasta));
 
     for variant in bench.variants {
-        pipeline = pipeline
-            .step(Step::serial(runs(bench, variant, &fixture.fasta, o)).name(variant.name));
+        pipeline =
+            pipeline.step(Step::serial(runs(bench, variant, &fixture.fasta, o)).name(variant.name));
     }
 
     pipeline

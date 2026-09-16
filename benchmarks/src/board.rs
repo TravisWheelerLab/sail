@@ -334,8 +334,8 @@ fn line_for(state: &State, op: &str, tool: &str) -> String {
     // still running: a spinner rather than a bar, so a row
     // that is working looks like the status line does
     if row.walls.len() < state.repeat {
-        let frame = SPINNER[(state.started.elapsed().as_secs_f64() / TICK.as_secs_f64()) as usize
-            % SPINNER.len()];
+        let frame = SPINNER
+            [(state.started.elapsed().as_secs_f64() / TICK.as_secs_f64()) as usize % SPINNER.len()];
 
         return format!(
             "  {label:<11} {weight}{colour}{tool:<13}{RESET} {colour}{frame}{RESET} \
