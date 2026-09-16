@@ -3,7 +3,6 @@ use std::path::PathBuf;
 use anyhow::{Result, bail};
 use clap::Args;
 use libsail::format::Format;
-use libsail::index::Index;
 use libsail::seq::fasta::IndexedFasta;
 use libsail::seq::p7hmm::IndexedHmm;
 use libsail::seq::stockholm::IndexedStockholm;
@@ -38,7 +37,7 @@ impl IndexArgs {
         let output = self
             .output
             .clone()
-            .unwrap_or_else(|| Index::path_for(&self.input));
+            .unwrap_or_else(|| libsail::index::path_for(&self.input));
 
         // one arm per format because the collection type is
         // what carries the name scan, and each is its own
@@ -47,21 +46,21 @@ impl IndexArgs {
             Format::Fasta => {
                 let mut collection = IndexedFasta::open(&self.input)?;
                 collection.name_index()?;
-                collection.index().save_as(&self.input, &output)?;
+                collection.index().write(&output, &self.input)?;
 
                 collection.index().len()
             }
             Format::Stockholm => {
                 let mut collection = IndexedStockholm::open(&self.input)?;
                 collection.name_index()?;
-                collection.index().save_as(&self.input, &output)?;
+                collection.index().write(&output, &self.input)?;
 
                 collection.index().len()
             }
             Format::Hmm => {
                 let mut collection = IndexedHmm::open(&self.input)?;
                 collection.name_index()?;
-                collection.index().save_as(&self.input, &output)?;
+                collection.index().write(&output, &self.input)?;
 
                 collection.index().len()
             }
@@ -75,6 +74,7 @@ impl IndexArgs {
 
 #[cfg(test)]
 mod tests {
+    use libsail::index::Index;
     use std::path::Path;
 
     use libsail::collection::Indexable;
@@ -111,7 +111,7 @@ mod tests {
         }
         .run()?;
 
-        Ok(Index::load(input).unwrap())
+        Ok(Index::read(&libsail::index::path_for(input)).unwrap())
     }
 
     fn names(index: &Index) -> Vec<Option<String>> {
@@ -119,13 +119,14 @@ mod tests {
             .map(|n| {
                 index
                     .name(n)
-                    .map(|n| String::from_utf8(n.to_vec()).unwrap())
+                    .unwrap()
+                    .map(|n| String::from_utf8(n.into_owned()).unwrap())
             })
             .collect()
     }
 
     fn clean(input: &Path) {
-        std::fs::remove_file(Index::path_for(input)).ok();
+        std::fs::remove_file(libsail::index::path_for(input)).ok();
         std::fs::remove_file(input).ok();
     }
 
@@ -220,7 +221,7 @@ mod tests {
         let input = scratch("fa-fresh", "proteins.fa");
         index(&input, None).unwrap();
 
-        assert!(Index::load(&input).is_ok());
+        assert!(Index::read(&libsail::index::path_for(&input)).is_ok());
 
         clean(&input);
     }
@@ -233,7 +234,7 @@ mod tests {
         let input = scratch("fa-assert", "proteins.fa");
 
         assert!(index(&input, Some(FormatArg::Stockholm)).is_err());
-        assert!(!Index::path_for(&input).exists());
+        assert!(!libsail::index::path_for(&input).exists());
 
         clean(&input);
     }

@@ -87,7 +87,7 @@ impl NamesArgs {
                     let index = Index::build_named(entry.reader()?, inputs.format())?;
 
                     for n in 0..index.len() {
-                        push(index.name(n), out)?;
+                        push(index.name(n)?.as_deref(), out)?;
                     }
                 }
                 Backend::Memory => {

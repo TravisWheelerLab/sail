@@ -983,7 +983,7 @@ impl<S: Source> IndexedHmm<S> {
     /// Borrowed from a mapped source and owned from a read one, exactly as
     /// [`Source::range`] hands them over.
     pub fn record(&self, n: usize) -> Result<Option<Cow<'_, [u8]>>> {
-        let Some(o) = self.index.offset(n) else {
+        let Some(o) = self.index.offset(n)? else {
             return Ok(None);
         };
 
@@ -1623,11 +1623,15 @@ mod tests {
         collection.name_index().unwrap();
 
         for n in 0..collection.len() {
-            let Some(name) = collection.index().name(n) else {
+            let Some(name) = collection.index().name(n).unwrap() else {
                 continue;
             };
 
-            assert_eq!(collection.index().position(name), Some(n), "record {n}");
+            assert_eq!(
+                collection.index().position(&name).unwrap(),
+                Some(n),
+                "record {n}"
+            );
         }
     }
 

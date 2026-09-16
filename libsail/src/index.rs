@@ -21,7 +21,7 @@ use crate::error::{Error, Result, bail_parse};
 use crate::format::Format;
 
 /// Where one record sits in the bytes it was indexed from.
-#[derive(Default, Clone, Debug, PartialEq)]
+#[derive(Default, Clone, Copy, Debug, PartialEq)]
 pub struct Offset {
     /// Absolute offset of the record's first byte.
     pub start: u64,
@@ -294,17 +294,149 @@ const MAX_NAME: usize = 64 * 1024;
 /// [`new`](Index::new) holds only offsets; [`name_with`](Index::name_with)
 /// adds the names, and [`save_as`](Index::save_as) writes the pair beside the
 /// file they describe.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Debug)]
 pub struct Index {
     format: Format,
-    offsets: Vec<Offset>,
+    body: Body,
+}
 
-    /// Every record's name, absent until [`name_with`](Index::name_with) runs.
-    //
-    // a layer rather than a field per record: an index is
-    // built to address a file, and naming it costs a pass
-    // over every record's bytes that most callers never want
-    names: Option<Names>,
+/// Bytes before the first offset: the header, and nothing else.
+const HEADER: u64 = 35;
+
+/// One offset on disk: a start and a length, both little-endian.
+const OFFSET: u64 = 16;
+
+/// One name span on disk: a present flag, a start, and a length.
+const SPAN: u64 = 13;
+
+/// Where an index keeps what it addresses.
+//
+// an enum rather than a type parameter: a second axis on
+// IndexedFasta would show in every signature and could not
+// be taken back, and this one is private, so a third
+// backing later breaks no caller
+#[derive(Debug)]
+enum Body {
+    /// Read whole, by [`Index::read`].
+    Memory {
+        offsets: Vec<Offset>,
+
+        /// Every record's name, absent until
+        /// [`name_with`](Index::name_with) runs.
+        //
+        // a layer rather than a field per record: an index
+        // is built to address a file, and naming it costs a
+        // pass over every record's bytes that most callers
+        // never want
+        names: Option<Names>,
+    },
+
+    /// Left in the file, by [`Index::open`], and read an entry at a time.
+    File { file: File, layout: Layout },
+}
+
+/// Where each part of an index sits in the file holding it.
+#[derive(Debug)]
+struct Layout {
+    count: usize,
+    names: Option<NameLayout>,
+}
+
+/// The name layer's three runs, once the blob's length is known.
+#[derive(Debug)]
+struct NameLayout {
+    blob_at: u64,
+    spans_at: u64,
+    by_name_at: u64,
+    by_name_len: usize,
+}
+
+impl Body {
+    fn len(&self) -> usize {
+        match self {
+            Body::Memory { offsets, .. } => offsets.len(),
+            Body::File { layout, .. } => layout.count,
+        }
+    }
+
+    fn offset(&self, n: usize) -> Result<Option<Offset>> {
+        match self {
+            Body::Memory { offsets, .. } => Ok(offsets.get(n).copied()),
+
+            Body::File { file, layout } => {
+                if n >= layout.count {
+                    return Ok(None);
+                }
+
+                let mut buf = [0u8; OFFSET as usize];
+                crate::pread::read_exact_at(file, &mut buf, HEADER + n as u64 * OFFSET)?;
+
+                Ok(Some(Offset {
+                    start: u64::from_le_bytes(buf[..8].try_into().expect("eight bytes")),
+                    n_bytes: narrow(u64::from_le_bytes(
+                        buf[8..].try_into().expect("eight bytes"),
+                    ))?,
+                }))
+            }
+        }
+    }
+
+    /// The record the `i`th entry of the name ordering points at.
+    fn ordered(&self, i: usize) -> Result<usize> {
+        let Body::File { file, layout } = self else {
+            return Ok(0);
+        };
+        let names = layout
+            .names
+            .as_ref()
+            .expect("an ordering means a name layer");
+
+        let mut buf = [0u8; 4];
+        crate::pread::read_exact_at(file, &mut buf, names.by_name_at + i as u64 * 4)?;
+
+        Ok(u32::from_le_bytes(buf) as usize)
+    }
+
+    fn has_names(&self) -> bool {
+        match self {
+            Body::Memory { names, .. } => names.is_some(),
+            Body::File { layout, .. } => layout.names.is_some(),
+        }
+    }
+
+    fn name(&self, n: usize) -> Result<Option<Cow<'_, [u8]>>> {
+        match self {
+            Body::Memory { names, .. } => {
+                Ok(names.as_ref().and_then(|ns| ns.name(n)).map(Cow::Borrowed))
+            }
+
+            Body::File { file, layout } => {
+                let Some(names) = &layout.names else {
+                    return Ok(None);
+                };
+                if n >= layout.count {
+                    return Ok(None);
+                }
+
+                let mut buf = [0u8; SPAN as usize];
+                crate::pread::read_exact_at(file, &mut buf, names.spans_at + n as u64 * SPAN)?;
+
+                // a record with no name of its own, kept
+                // distinct from one named the empty string
+                if buf[0] == 0 {
+                    return Ok(None);
+                }
+
+                let start = u64::from_le_bytes(buf[1..9].try_into().expect("eight bytes"));
+                let len = u32::from_le_bytes(buf[9..].try_into().expect("four bytes"));
+
+                let mut name = vec![0u8; len as usize];
+                crate::pread::read_exact_at(file, &mut name, names.blob_at + start)?;
+
+                Ok(Some(Cow::Owned(name)))
+            }
+        }
+    }
 }
 
 /// The name layer: the names themselves, and an ordering of them for lookup.
@@ -352,8 +484,10 @@ impl Index {
     pub fn new(format: Format, offsets: Vec<Offset>) -> Self {
         Index {
             format,
-            offsets,
-            names: None,
+            body: Body::Memory {
+                offsets,
+                names: None,
+            },
         }
     }
 
@@ -362,48 +496,99 @@ impl Index {
     }
 
     pub fn len(&self) -> usize {
-        self.offsets.len()
+        self.body.len()
     }
 
     pub fn is_empty(&self) -> bool {
-        self.offsets.is_empty()
+        self.len() == 0
     }
 
-    pub fn offset(&self, n: usize) -> Option<&Offset> {
-        self.offsets.get(n)
+    /// Where the `n`th record sits, `None` past the end.
+    ///
+    /// # Errors
+    ///
+    /// A read failure, for an index left in its file by [`open`](Index::open).
+    pub fn offset(&self, n: usize) -> Result<Option<Offset>> {
+        self.body.offset(n)
     }
 
-    pub fn offsets(&self) -> &[Offset] {
-        &self.offsets
+    /// Every offset at once, `None` for an index left in its file.
+    //
+    // the branch a walk over every record would otherwise
+    // pay per record, paid once
+    pub fn offsets(&self) -> Option<&[Offset]> {
+        match &self.body {
+            Body::Memory { offsets, .. } => Some(offsets),
+            Body::File { .. } => None,
+        }
     }
 
     pub fn has_names(&self) -> bool {
-        self.names.is_some()
+        self.body.has_names()
     }
 
     /// The `n`th record's name, `None` when the index is unnamed or that
     /// record carries no name.
-    pub fn name(&self, n: usize) -> Option<&[u8]> {
-        self.names.as_ref()?.name(n)
+    ///
+    /// Borrowed from an index read whole and owned from one left in its file.
+    pub fn name(&self, n: usize) -> Result<Option<Cow<'_, [u8]>>> {
+        self.body.name(n)
     }
 
     /// The position of the first record called `name`.
-    pub fn position(&self, name: &[u8]) -> Option<usize> {
-        let names = self.names.as_ref()?;
-
+    pub fn position(&self, name: &[u8]) -> Result<Option<usize>> {
         // by_name is ordered by name bytes, so the first
         // entry not ordered before `name` is the only one
         // that can equal it. every entry names a record that
         // carries one -- name_with builds it that way and
         // read_from refuses anything else -- so the fallback
         // is unreachable rather than a default
-        let at = names
-            .by_name
-            .partition_point(|&n| names.name(n as usize).unwrap_or_default() < name);
+        match &self.body {
+            Body::Memory { names, .. } => {
+                let Some(names) = names else {
+                    return Ok(None);
+                };
 
-        let n = *names.by_name.get(at)? as usize;
+                let at = names
+                    .by_name
+                    .partition_point(|&n| names.name(n as usize).unwrap_or_default() < name);
 
-        (names.name(n) == Some(name)).then_some(n)
+                let Some(&n) = names.by_name.get(at) else {
+                    return Ok(None);
+                };
+                let n = n as usize;
+
+                Ok((names.name(n) == Some(name)).then_some(n))
+            }
+
+            Body::File { layout, .. } => {
+                let Some(names) = &layout.names else {
+                    return Ok(None);
+                };
+
+                // the same partition point, one read a probe
+                // rather than an indexed lookup
+                let (mut lo, mut hi) = (0usize, names.by_name_len);
+                while lo < hi {
+                    let mid = lo + (hi - lo) / 2;
+                    let at = self.body.ordered(mid)?;
+
+                    if self.body.name(at)?.unwrap_or_default().as_ref() < name {
+                        lo = mid + 1;
+                    } else {
+                        hi = mid;
+                    }
+                }
+
+                if lo == names.by_name_len {
+                    return Ok(None);
+                }
+
+                let n = self.body.ordered(lo)?;
+
+                Ok((self.body.name(n)?.as_deref() == Some(name)).then_some(n))
+            }
+        }
     }
 
     /// Name every record from the bytes its [`Offset`] frames.
@@ -415,17 +600,24 @@ impl Index {
     where
         F: for<'a> FnMut(&'a Offset) -> Result<Option<Cow<'a, [u8]>>>,
     {
-        if u32::try_from(self.offsets.len()).is_err() {
+        // naming walks every record, and the layer it
+        // builds has nowhere to go in a file already
+        // written
+        let Body::Memory { offsets, names } = &mut self.body else {
+            bail_parse!("an index opened in place cannot be named, only one read whole")
+        };
+
+        if u32::try_from(offsets.len()).is_err() {
             bail_parse!(
                 "an index of {} records is past the u32 a name lookup addresses",
-                self.offsets.len()
+                offsets.len()
             )
         }
 
         let mut blob = Vec::new();
-        let mut spans = Vec::with_capacity(self.offsets.len());
+        let mut spans = Vec::with_capacity(offsets.len());
 
-        for offset in &self.offsets {
+        for offset in offsets.iter() {
             let Some(name) = name_of(offset)? else {
                 spans.push(None);
                 continue;
@@ -456,7 +648,7 @@ impl Index {
             name_in(&blob, spans[a as usize]).cmp(&name_in(&blob, spans[b as usize]))
         });
 
-        self.names = Some(Names {
+        *names = Some(Names {
             blob,
             spans,
             by_name,
@@ -512,24 +704,64 @@ impl Index {
 
     /// The path a file's index is written to: the file's own, plus
     /// [`EXTENSION`].
-    pub fn path_for(source: impl AsRef<Path>) -> PathBuf {
-        // appended rather than substituted, so proteins.fa
-        // and proteins.sto do not both index to
-        // proteins.saidx
-        let mut name = OsString::from(source.as_ref().as_os_str());
-        name.push(".");
-        name.push(EXTENSION);
+    /// Read the whole index at `path` into memory.
+    pub fn read(path: &Path) -> Result<Index> {
+        let (index, _, _) = Index::read_from(BufReader::new(File::open(path)?))?;
 
-        PathBuf::from(name)
+        Ok(index)
     }
 
-    /// Write this index to `at`, stamped with `source`'s length and
-    /// modification time so [`load_from`](Index::load_from) can tell it apart
-    /// from a file that has since changed.
-    pub fn save_as(&self, source: &Path, at: &Path) -> Result<()> {
-        let metadata = std::fs::metadata(source)?;
+    /// Attach to the index at `path`, leaving its offsets and names in the
+    /// file and reading one when it is asked for.
+    ///
+    /// Reads the header and nothing else, so opening an index of a billion
+    /// records costs the same as opening one of ten.
+    pub fn open(path: &Path) -> Result<Index> {
+        let file = File::open(path)?;
+        let (format, count, has_names) = read_head(&file)?;
 
-        let mut temporary = OsString::from(at.as_os_str());
+        let names = if has_names {
+            // the blob's length is the one thing the header
+            // does not carry, and every run after it is
+            // placed relative to where it ends
+            let mut buf = [0u8; 8];
+            let blob_len_at = HEADER + count as u64 * OFFSET;
+            crate::pread::read_exact_at(&file, &mut buf, blob_len_at)?;
+            let blob_len = u64::from_le_bytes(buf);
+
+            let blob_at = blob_len_at + 8;
+            let spans_at = blob_at + blob_len;
+            let by_name_len_at = spans_at + count as u64 * SPAN;
+
+            crate::pread::read_exact_at(&file, &mut buf, by_name_len_at)?;
+            let by_name_len = narrow(u64::from_le_bytes(buf))?;
+
+            Some(NameLayout {
+                blob_at,
+                spans_at,
+                by_name_at: by_name_len_at + 8,
+                by_name_len,
+            })
+        } else {
+            None
+        };
+
+        Ok(Index {
+            format,
+            body: Body::File {
+                file,
+                layout: Layout { count, names },
+            },
+        })
+    }
+
+    /// Write this index to `path`, stamped with `data`'s length and
+    /// modification time so [`is_current`] can tell it apart from a file that
+    /// has since changed.
+    pub fn write(&self, path: &Path, data: &Path) -> Result<()> {
+        let metadata = std::fs::metadata(data)?;
+
+        let mut temporary = OsString::from(path.as_os_str());
         temporary.push(".tmp");
         let temporary = PathBuf::from(temporary);
 
@@ -541,60 +773,34 @@ impl Index {
         out.flush()?;
         drop(out);
 
-        std::fs::rename(&temporary, at)?;
+        std::fs::rename(&temporary, path)?;
 
         Ok(())
     }
 
-    /// [`save_as`](Index::save_as), to [`path_for`](Index::path_for).
-    pub fn save(&self, source: &Path) -> Result<()> {
-        self.save_as(source, &Index::path_for(source))
-    }
-
-    /// Read the index at `at`, and refuse it unless it still describes
-    /// `source`.
-    ///
-    /// # Errors
-    ///
-    /// A missing index is the not-found [`Io`](crate::ErrorKind::Io) failure
-    /// `File::open` reports.
-    pub fn load_from(source: &Path, at: &Path) -> Result<Index> {
-        let (index, len, mtime) = Index::read_from(BufReader::new(File::open(at)?))?;
-
-        let metadata = std::fs::metadata(source)?;
-        if len != metadata.len() || epoch_parts(mtime) != epoch_parts(metadata.modified()?) {
-            bail_parse!(
-                "{} is an index of {} as it was, and the file has changed since",
-                at.display(),
-                source.display()
-            )
-        }
-
-        Ok(index)
-    }
-
-    /// [`load_from`](Index::load_from), from [`path_for`](Index::path_for).
-    pub fn load(source: &Path) -> Result<Index> {
-        Index::load_from(source, &Index::path_for(source))
-    }
-
     fn write_to<W: Write>(&self, mut w: W, len: u64, mtime: SystemTime) -> Result<()> {
         let (secs, nanos) = epoch_parts(mtime);
+
+        // an index left in its file is written back by
+        // copying that file, not by this
+        let Body::Memory { offsets, names } = &self.body else {
+            bail_parse!("an index opened in place is already written")
+        };
 
         w.write_all(&MAGIC)?;
         w.write_all(&[VERSION, format_byte(self.format)])?;
         w.write_all(&len.to_le_bytes())?;
         w.write_all(&secs.to_le_bytes())?;
         w.write_all(&nanos.to_le_bytes())?;
-        w.write_all(&(self.offsets.len() as u64).to_le_bytes())?;
-        w.write_all(&[u8::from(self.names.is_some())])?;
+        w.write_all(&(offsets.len() as u64).to_le_bytes())?;
+        w.write_all(&[u8::from(names.is_some())])?;
 
-        for offset in &self.offsets {
+        for offset in offsets {
             w.write_all(&offset.start.to_le_bytes())?;
             w.write_all(&(offset.n_bytes as u64).to_le_bytes())?;
         }
 
-        let Some(names) = &self.names else {
+        let Some(names) = names else {
             return Ok(());
         };
 
@@ -657,8 +863,7 @@ impl Index {
         Ok((
             Index {
                 format,
-                offsets,
-                names,
+                body: Body::Memory { offsets, names },
             },
             len,
             UNIX_EPOCH + std::time::Duration::new(secs, nanos),
@@ -668,16 +873,97 @@ impl Index {
 
 // ---
 
+/// Where an index for `data` goes by default: `data`, plus `.saidx`.
+pub fn path_for(data: impl AsRef<Path>) -> PathBuf {
+    // appended rather than substituted, so proteins.fa
+    // and proteins.sto do not both index to
+    // proteins.saidx
+    let mut name = OsString::from(data.as_ref().as_os_str());
+    name.push(".");
+    name.push(EXTENSION);
+
+    PathBuf::from(name)
+}
+
+/// Whether the index at `path` still describes `data` as it is now.
+///
+/// `false` for an index that is missing, unreadable, or stamped against a
+/// different state of `data`: a caller's answer to all three is to build one.
+pub fn is_current(path: &Path, data: &Path) -> Result<bool> {
+    let Ok(file) = File::open(path) else {
+        return Ok(false);
+    };
+
+    let mut buf = [0u8; HEADER as usize];
+    if crate::pread::read_exact_at(&file, &mut buf, 0).is_err() {
+        return Ok(false);
+    }
+
+    if buf[..4] != MAGIC || buf[4] != VERSION {
+        return Ok(false);
+    }
+
+    let len = u64::from_le_bytes(buf[6..14].try_into().expect("eight bytes"));
+    let secs = u64::from_le_bytes(buf[14..22].try_into().expect("eight bytes"));
+    let nanos = u32::from_le_bytes(buf[22..26].try_into().expect("four bytes"));
+
+    // the data file is the caller's, so a failure to stat it
+    // is theirs to see rather than an answer of false
+    let metadata = std::fs::metadata(data)?;
+
+    Ok(len == metadata.len() && (secs, nanos) == epoch_parts(metadata.modified()?))
+}
+
+/// The record count of the index at `path`, from its header alone.
+pub fn count_in(path: &Path) -> Result<usize> {
+    let (_, count, _) = read_head(&File::open(path)?)?;
+
+    Ok(count)
+}
+
+/// An index file's format, record count, and whether it carries names.
+fn read_head(file: &File) -> Result<(Format, usize, bool)> {
+    let mut buf = [0u8; HEADER as usize];
+    crate::pread::read_exact_at(file, &mut buf, 0)?;
+
+    if buf[..4] != MAGIC {
+        bail_parse!("not a sail index: it opens {:?}, not {MAGIC:?}", &buf[..4])
+    }
+    if buf[4] != VERSION {
+        bail_parse!(
+            "a sail index written at version {}, and this reads {VERSION}",
+            buf[4]
+        )
+    }
+
+    let format = format_from_byte(buf[5])?;
+    let count = narrow(u64::from_le_bytes(
+        buf[26..34].try_into().expect("eight bytes"),
+    ))?;
+
+    let has_names = match buf[34] {
+        0 => false,
+        1 => true,
+        other => bail_parse!("an index carries names or it does not, and this says {other}"),
+    };
+
+    Ok((format, count, has_names))
+}
+
 fn read_offset<R: Read>(r: &mut R) -> Result<Offset> {
     let start = u64::from_le_bytes(take(r)?);
-    let n_bytes = u64::from_le_bytes(take(r)?);
-
-    // usize on a 32-bit target is narrower than what was
-    // written, and `as` would truncate a record silently
-    let n_bytes = usize::try_from(n_bytes)
-        .map_err(|_| Error::parse(format!("a record of {n_bytes} bytes does not fit a usize")))?;
+    let n_bytes = narrow(u64::from_le_bytes(take(r)?))?;
 
     Ok(Offset { start, n_bytes })
+}
+
+/// A length off the disk as a `usize`.
+//
+// usize on a 32-bit target is narrower than what was
+// written, and `as` would truncate a record silently
+fn narrow(n: u64) -> Result<usize> {
+    usize::try_from(n)
+        .map_err(|_| Error::parse(format!("a record of {n} bytes does not fit a usize")))
 }
 
 fn read_names<R: Read>(r: &mut R, count: usize) -> Result<Names> {
@@ -1184,16 +1470,116 @@ mod tests {
         to
     }
 
+    /// Everything two indexes are expected to agree on, since an index that
+    /// may hold an open file cannot derive PartialEq.
+    fn same(a: &Index, b: &Index) {
+        assert_eq!(a.format(), b.format());
+        assert_eq!(a.len(), b.len());
+        assert_eq!(a.has_names(), b.has_names());
+
+        for n in 0..a.len() {
+            assert_eq!(a.offset(n).unwrap(), b.offset(n).unwrap(), "offset {n}");
+            assert_eq!(a.name(n).unwrap(), b.name(n).unwrap(), "name {n}");
+        }
+    }
+
     fn clean(path: &Path) {
-        std::fs::remove_file(Index::path_for(path)).ok();
+        std::fs::remove_file(path_for(path)).ok();
         std::fs::remove_file(path).ok();
+    }
+
+    #[test]
+    fn an_index_opened_in_place_answers_what_one_read_whole_does() {
+        // the two backings of one file, asked everything the
+        // type can be asked. an opened index reaches its
+        // offsets, spans and ordering a read at a time, so a
+        // disagreement here is arithmetic on the layout
+        let path = scratch("opened", fixture!("families.sto"));
+        let at = path_for(&path);
+
+        let index = Index::build_named(File::open(&path).unwrap(), Format::Stockholm).unwrap();
+        index.write(&at, &path).unwrap();
+
+        let whole = Index::read(&at).unwrap();
+        let opened = Index::open(&at).unwrap();
+
+        same(&whole, &opened);
+        assert!(whole.has_names(), "the fixture names its alignments");
+
+        for n in 0..whole.len() {
+            let Some(name) = whole.name(n).unwrap() else {
+                continue;
+            };
+
+            assert_eq!(
+                opened.position(&name).unwrap(),
+                whole.position(&name).unwrap(),
+                "looking up record {n} by name"
+            );
+        }
+
+        assert_eq!(opened.position(b"not-a-family").unwrap(), None);
+        assert_eq!(opened.offset(whole.len()).unwrap(), None, "past the end");
+
+        clean(&path);
+    }
+
+    #[test]
+    fn only_an_index_read_whole_lends_its_offsets() {
+        let path = scratch("lends", fixture!("proteins.fa"));
+        let at = path_for(&path);
+
+        Index::build(File::open(&path).unwrap(), Format::Fasta)
+            .unwrap()
+            .write(&at, &path)
+            .unwrap();
+
+        assert!(Index::read(&at).unwrap().offsets().is_some());
+        assert!(
+            Index::open(&at).unwrap().offsets().is_none(),
+            "an opened index has no slice to lend"
+        );
+
+        clean(&path);
+    }
+
+    #[test]
+    fn an_index_opened_in_place_refuses_to_be_named() {
+        let path = scratch("naming", fixture!("proteins.fa"));
+        let at = path_for(&path);
+
+        Index::build(File::open(&path).unwrap(), Format::Fasta)
+            .unwrap()
+            .write(&at, &path)
+            .unwrap();
+
+        let err = Index::open(&at)
+            .unwrap()
+            .name_with(|_| Ok(None))
+            .expect_err("naming walks every record and rewrites the layer");
+        assert!(err.to_string().contains("read whole"), "{err}");
+
+        clean(&path);
+    }
+
+    #[test]
+    fn a_count_is_read_from_the_header_alone() {
+        let path = scratch("counted", fixture!("families.sto"));
+        let at = path_for(&path);
+
+        let index = Index::build(File::open(&path).unwrap(), Format::Stockholm).unwrap();
+        index.write(&at, &path).unwrap();
+
+        assert_eq!(count_in(&at).unwrap(), index.len());
+
+        clean(&path);
     }
 
     #[test]
     fn a_written_index_reads_back_equal() {
         let index = sample();
 
-        assert_eq!(read_back(&written(&index)).unwrap(), index);
+        same(&read_back(&written(&index)).unwrap(), &index);
     }
 
     #[test]
@@ -1204,18 +1590,18 @@ mod tests {
         // answer to the empty string
         let back = read_back(&written(&sample())).unwrap();
 
-        assert_eq!(back.name(0), Some(&b"SH3_1"[..]));
-        assert_eq!(back.name(1), None);
-        assert_eq!(back.name(2), Some(&b""[..]));
+        assert_eq!(back.name(0).unwrap().as_deref(), Some(&b"SH3_1"[..]));
+        assert_eq!(back.name(1).unwrap(), None);
+        assert_eq!(back.name(2).unwrap().as_deref(), Some(&b""[..]));
     }
 
     #[test]
     fn an_unnamed_record_is_not_found_by_any_name() {
         let index = sample();
 
-        assert_eq!(index.position(b"SH3_1"), Some(0));
-        assert_eq!(index.position(b""), Some(2));
-        assert_eq!(index.position(b"PDZ"), None);
+        assert_eq!(index.position(b"SH3_1").unwrap(), Some(0));
+        assert_eq!(index.position(b"").unwrap(), Some(2));
+        assert_eq!(index.position(b"PDZ").unwrap(), None);
     }
 
     #[test]
@@ -1240,9 +1626,9 @@ mod tests {
             })
             .unwrap();
 
-        assert_eq!(index.position(b"a"), Some(1));
-        assert_eq!(index.position(b"b"), Some(0));
-        assert_eq!(index.position(b"c"), Some(3));
+        assert_eq!(index.position(b"a").unwrap(), Some(1));
+        assert_eq!(index.position(b"b").unwrap(), Some(0));
+        assert_eq!(index.position(b"c").unwrap(), Some(3));
     }
 
     #[test]
@@ -1250,16 +1636,16 @@ mod tests {
         let index = Index::new(Format::Fasta, vec![off(0, 10), off(10, 4)]);
 
         assert!(!index.has_names());
-        assert_eq!(index.name(0), None);
-        assert_eq!(index.position(b"a"), None);
-        assert_eq!(read_back(&written(&index)).unwrap(), index);
+        assert_eq!(index.name(0).unwrap(), None);
+        assert_eq!(index.position(b"a").unwrap(), None);
+        same(&read_back(&written(&index)).unwrap(), &index);
     }
 
     #[test]
     fn the_offsets_come_back_in_file_order() {
         assert_eq!(
             read_back(&written(&sample())).unwrap().offsets(),
-            &[off(0, 2400), off(2400, 2469), off(4869, 0)]
+            Some(&[off(0, 2400), off(2400, 2469), off(4869, 0)][..])
         );
     }
 
@@ -1329,11 +1715,11 @@ mod tests {
     #[test]
     fn an_index_path_is_appended_so_two_formats_do_not_collide() {
         assert_eq!(
-            Index::path_for("data/proteins.fa"),
+            path_for("data/proteins.fa"),
             PathBuf::from("data/proteins.fa.saidx")
         );
         assert_eq!(
-            Index::path_for("data/proteins.sto"),
+            path_for("data/proteins.sto"),
             PathBuf::from("data/proteins.sto.saidx")
         );
     }
@@ -1346,11 +1732,11 @@ mod tests {
 
         let mut index = Index::new(Format::Stockholm, offsets.clone());
         index.name_with(|_| Ok(None)).unwrap();
-        index.save(&path).unwrap();
+        index.write(&path_for(&path), &path).unwrap();
 
-        let back = Index::load(&path).unwrap();
+        let back = Index::read(&path_for(&path)).unwrap();
         assert_eq!(back.format(), Format::Stockholm);
-        assert_eq!(back.offsets(), &offsets[..]);
+        assert_eq!(back.offsets(), Some(&offsets[..]));
         assert!(back.has_names());
 
         clean(&path);
@@ -1366,15 +1752,17 @@ mod tests {
         let path = scratch("stale", fixture!("families.sto"));
         let offsets =
             build_index::<_, TerminatingDelim>(std::fs::File::open(&path).unwrap()).unwrap();
-        Index::new(Format::Stockholm, offsets).save(&path).unwrap();
+        Index::new(Format::Stockholm, offsets)
+            .write(&path_for(&path), &path)
+            .unwrap();
 
-        assert!(Index::load(&path).is_ok());
+        assert!(is_current(&path_for(&path), &path).unwrap());
 
         let mut bytes = std::fs::read(&path).unwrap();
         bytes.extend_from_slice(b"# STOCKHOLM 1.0\n//\n");
         std::fs::write(&path, &bytes).unwrap();
 
-        assert!(Index::load(&path).is_err());
+        assert!(!is_current(&path_for(&path), &path).unwrap());
 
         clean(&path);
     }
@@ -1838,10 +2226,10 @@ mod build_tests {
             for n in 0..named.len() {
                 let want = crate::seq::name_of(
                     format,
-                    &bytes[named.offset(n).unwrap().start as usize..]
-                        [..named.offset(n).unwrap().n_bytes],
+                    &bytes[named.offset(n).unwrap().unwrap().start as usize..]
+                        [..named.offset(n).unwrap().unwrap().n_bytes],
                 );
-                assert_eq!(named.name(n), want, "{path} record {n}");
+                assert_eq!(named.name(n).unwrap().as_deref(), want, "{path} record {n}");
             }
         }
     }
@@ -1860,7 +2248,11 @@ mod build_tests {
 
         assert_eq!(built.offsets(), scanned.index().offsets());
         for n in 0..built.len() {
-            assert_eq!(built.name(n), scanned.index().name(n), "record {n}");
+            assert_eq!(
+                built.name(n).unwrap(),
+                scanned.index().name(n).unwrap(),
+                "record {n}"
+            );
         }
     }
 
@@ -1870,13 +2262,13 @@ mod build_tests {
         std::fs::write(&path, b">a\nACGT\n>b\nGGTT\n").unwrap();
 
         let built = Index::build_named(File::open(&path).unwrap(), Format::Fasta).unwrap();
-        built.save(&path).unwrap();
+        built.write(&path_for(&path), &path).unwrap();
 
-        let back = Index::load(&path).unwrap();
+        let back = Index::read(&path_for(&path)).unwrap();
         assert_eq!(back.offsets(), built.offsets());
-        assert_eq!(back.position(b"b"), Some(1));
+        assert_eq!(back.position(b"b").unwrap(), Some(1));
 
         std::fs::remove_file(&path).ok();
-        std::fs::remove_file(Index::path_for(&path)).ok();
+        std::fs::remove_file(path_for(&path)).ok();
     }
 }
