@@ -432,6 +432,61 @@ fn split_writes_the_parts_it_says_it_does() {
 }
 
 #[test]
+fn a_saved_index_changes_nothing_a_command_writes() {
+    // --read indexed reads the index beside its input when
+    // one is current. the speedup is the point and the
+    // output is the thing that must not move
+    let s = Scratch::new("reuse");
+    let path = s.write("in.fa", b">a\nAAAA\n>b\nCCCC\n>c\nGGGG\n");
+
+    let ops: [&[&str]; 4] = [
+        &["get", &path, "2"],
+        &["names", &path],
+        &["count", &path],
+        &["grep", "b", &path],
+    ];
+
+    for op in ops {
+        let mut argv = op.to_vec();
+        argv.extend_from_slice(&["--read", "indexed"]);
+
+        let without = sail(&argv, b"");
+        assert!(without.ok, "{:?}: {}", op, without.stderr);
+
+        assert!(sail(&["index", &path], b"").ok);
+
+        let with = sail(&argv, b"");
+        assert!(with.ok, "{:?}: {}", op, with.stderr);
+        assert_eq!(
+            with.stdout, without.stdout,
+            "{op:?} wrote something else once an index was there"
+        );
+
+        std::fs::remove_file(format!("{path}.saidx")).unwrap();
+    }
+}
+
+#[test]
+fn an_index_of_the_file_as_it_was_is_ignored_rather_than_trusted() {
+    let s = Scratch::new("stale");
+    let path = s.write("in.fa", b">a\nAAAA\n>b\nCCCC\n");
+
+    assert!(sail(&["index", &path], b"").ok);
+
+    // the same length would leave the stamp's mtime as the
+    // only thing that moved, and a different one moves both
+    std::fs::write(&path, b">a\nAAAA\n>b\nCCCC\n>c\nGGGG\n").unwrap();
+
+    let run = sail(&["names", &path, "--read", "indexed"], b"");
+    assert!(run.ok, "{}", run.stderr);
+    assert_eq!(
+        String::from_utf8_lossy(&run.stdout),
+        "a\nb\nc\n",
+        "the third record is missing, so the old index was used"
+    );
+}
+
+#[test]
 fn index_writes_an_index_file_that_loads_back() {
     let s = Scratch::new("index");
     let path = s.write("in.fa", b">a\nAAAA\n>b\nCCCC\n");
