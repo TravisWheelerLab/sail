@@ -1,0 +1,103 @@
+# Changelog
+
+All notable changes to libsail are recorded here.
+
+The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html), with
+cargo's reading of it below 1.0: the **minor** is the breaking axis, so 0.2 to
+0.3 is a breaking release and 0.2.0 to 0.2.1 is not.
+
+## [Unreleased]
+
+## [0.3.0] - 2026-09-16
+
+Records hold their text as bytes, an index can leave its offsets on disk, and a
+hit table can be walked one row at a time.
+
+### Added
+
+- `lines::Rows<R: Read>`, one table row at a time out of a stream and into a
+  reused buffer. Frames a file exactly as `line_index` does, which a test
+  asserts over every hit-table fixture at five chunk sizes.
+- `tbl::fields<const K>(row, want)`, K columns borrowed from a row in one pass,
+  stopping at the highest column asked for.
+- `Indexable::split_weighted(k, weight)`, `k` parts of near-equal weight beside
+  `split`'s `k` parts of near-equal length. Longest-processing-time, and
+  deterministic for a given input.
+- `seq::p7hmm::leng_of`, a model's `LENG` read off its bytes without parsing it.
+- `Index::open`, which reads an index file's header and leaves the offsets and
+  names in it, answering `offset(n)` in one `pread` and `name(n)` in two.
+- `Index::read`, `Index::write`, and module-level `index::path_for`,
+  `index::is_current` and `index::count_in`.
+- `StockholmRecord::id_str` and `HmmHeader::name_str`, for a caller that wants
+  text and will take the `Result`.
+- `StockholmRecord::gr_get(name, feature)`, which reads a `#=GR` annotation
+  without building the key it is stored under.
+
+### Changed
+
+- Records hold bytes. `StockholmRecord`'s `gf`, `gs`, `gc`, `gr` and
+  `names`, and `HmmHeader`'s `version`, `name`, `acc`, `desc`, `date`, `com`
+  and `extra`, are `Vec<u8>` where they were `String`. FASTA already worked this
+  way; the other two were stricter than either specification requires.
+  A non-UTF-8 byte in an annotation no longer fails the record, which is what
+  kept Pfam's SEED alignments from parsing at all. Numbers and enums still read
+  as text and fail as the field they are.
+- `Index::offset(n)` returns `Result<Option<Offset>>` where it returned
+  `Option<&Offset>`, and `Index::offsets()` returns `Option<&[Offset]>`, `Some`
+  only where there is a slice to lend.
+- `Index::name(n)` returns `Result<Option<Cow<'_, [u8]>>>` and
+  `Index::position(name)` returns `Result<Option<usize>>`.
+- `StockholmRecord::get`, `id`, `gf_first`, `gf_all`, `ss_cons` and `row` take
+  and answer in `&[u8]`.
+- `Offset` derives `Copy`.
+
+### Removed
+
+- `Index::load`, `Index::load_from`, `Index::save` and `Index::save_as`,
+  replaced by `read`/`open`/`write` plus `index::path_for`. Reading an index no
+  longer needs the data file: `read` and `open` take one path, the index, and
+  only `write` takes two, because the stamp it records is a fact about the data.
+- `Index` no longer derives `Clone` or `PartialEq`. An index may hold an open
+  file, and `std::fs::File` implements neither.
+
+## [0.2.0] - 2026-09-16
+
+The hit tables gained per-format row types, and every format gained a way to be
+read one record at a time.
+
+### Added
+
+- `format::Format`, `format::detect` and `format::detect_path`.
+- `index::Index`, an offset table with an optional name layer that saves and
+  loads itself beside the file it describes.
+- `index::Reader<R: Read>`, one record's framed bytes at a time.
+- `seq::name_of` and the per-format `name_of` scans, `seq::fasta::len_of` and
+  `seq::fasta::rewrap`.
+- `record(n)` on the indexed collections, for a record's framed bytes.
+- Per-format hit-table rows carrying every column: `tbl::blast::BlastRow`,
+  `tbl::nail::NailRow`, `tbl::hmmer::HmmerRow` and `HmmerDomRow`, with the
+  `tbl::WriteRow` trait and the `*Rows` aliases.
+
+### Changed
+
+- `tbl::Table` and `tbl::IndexedTable` take a `P: Parse` where they took a
+  `C: HitColumns`, so `try_get` yields `P::Record`.
+- `HitColumns::N_FIELDS` became `N_COLUMNS`.
+- `collection::Indexed<I>` became `View<I>` and `IndexedIter` became `Iter`,
+  which changes the return type of every combinator.
+
+### Removed
+
+- `tbl::Span`. `Hit`'s `query_span` and `target_span` became four
+  `Option<usize>` fields.
+
+## [0.1.0] - 2026-09-07
+
+First release: FASTA, Stockholm, HMMER3 p7hmm and the BLAST, HMMER and nail hit
+tables, with the `collection`, `parse` and `source` layers behind them.
+
+[Unreleased]: https://github.com/TravisWheelerLab/sail/compare/libsail-v0.3.0...HEAD
+[0.3.0]: https://github.com/TravisWheelerLab/sail/compare/libsail-v0.2.0...libsail-v0.3.0
+[0.2.0]: https://github.com/TravisWheelerLab/sail/compare/libsail-v0.1.0...libsail-v0.2.0
+[0.1.0]: https://github.com/TravisWheelerLab/sail/releases/tag/libsail-v0.1.0
