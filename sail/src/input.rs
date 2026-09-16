@@ -402,6 +402,33 @@ pub(crate) fn index_of(path: &Path, format: Format) -> Result<libsail::index::In
     Ok(libsail::index::Index::build(File::open(path)?, format)?)
 }
 
+/// The FASTA collection for `path`, on the index beside it when one is current.
+//
+// one call per format, because `indexed!` expands into every
+// operation that reads on disk: the work belongs here rather
+// than twenty-four times over
+pub(crate) fn indexed_fasta(path: &Path) -> Result<libsail::seq::fasta::IndexedFasta> {
+    let index = index_of(path, Format::Fasta)?;
+
+    Ok(libsail::seq::fasta::IndexedFasta::with_index(path, index)?)
+}
+
+/// The Stockholm collection for `path`, the same way.
+pub(crate) fn indexed_stockholm(path: &Path) -> Result<libsail::seq::stockholm::IndexedStockholm> {
+    let index = index_of(path, Format::Stockholm)?;
+
+    Ok(libsail::seq::stockholm::IndexedStockholm::with_index(
+        path, index,
+    )?)
+}
+
+/// The profile collection for `path`, the same way.
+pub(crate) fn indexed_hmm(path: &Path) -> Result<libsail::seq::p7hmm::IndexedHmm> {
+    let index = index_of(path, Format::Hmm)?;
+
+    Ok(libsail::seq::p7hmm::IndexedHmm::with_index(path, index)?)
+}
+
 /// Run `body` against the disk-backed collection the format calls for.
 macro_rules! indexed {
     ($format:expr, $path:expr, |$collection:ident| $body:expr) => {
@@ -410,24 +437,15 @@ macro_rules! indexed {
         // held in memory
         match $format {
             libsail::format::Format::Fasta => {
-                let $collection = libsail::seq::fasta::IndexedFasta::with_index(
-                    $path,
-                    crate::input::index_of($path, $format)?,
-                )?;
+                let $collection = crate::input::indexed_fasta($path)?;
                 $body
             }
             libsail::format::Format::Stockholm => {
-                let $collection = libsail::seq::stockholm::IndexedStockholm::with_index(
-                    $path,
-                    crate::input::index_of($path, $format)?,
-                )?;
+                let $collection = crate::input::indexed_stockholm($path)?;
                 $body
             }
             libsail::format::Format::Hmm => {
-                let $collection = libsail::seq::p7hmm::IndexedHmm::with_index(
-                    $path,
-                    crate::input::index_of($path, $format)?,
-                )?;
+                let $collection = crate::input::indexed_hmm($path)?;
                 $body
             }
         }
