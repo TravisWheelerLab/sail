@@ -10,6 +10,8 @@ underneath, so `sail` and `libsail` move independently.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-09-16
+
 ### Added
 
 - `skim`, which draws records at random and writes them in the file's order
@@ -83,7 +85,8 @@ was a library stub with no binary.
 Placeholders. Both were library stubs holding a few lines of Rust, and neither
 shipped a command.
 
-[Unreleased]: https://github.com/TravisWheelerLab/sail/compare/sail-v0.2.1...HEAD
+[Unreleased]: https://github.com/TravisWheelerLab/sail/compare/sail-v0.3.0...HEAD
+[0.3.0]: https://github.com/TravisWheelerLab/sail/compare/sail-v0.2.1...sail-v0.3.0
 [0.2.1]: https://github.com/TravisWheelerLab/sail/compare/sail-v0.2.0...sail-v0.2.1
 [0.2.0]: https://github.com/TravisWheelerLab/sail/compare/sail-v0.1.1...sail-v0.2.0
 [0.1.1]: https://github.com/TravisWheelerLab/sail/compare/sail-v0.1.0...sail-v0.1.1

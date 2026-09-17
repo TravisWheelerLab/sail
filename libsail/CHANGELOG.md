@@ -9,6 +9,8 @@ cargo's reading of it below 1.0: the **minor** is the breaking axis, so 0.2 to
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-09-16
+
 `permute` and `sample` compute their permutation from a seed instead of storing
 one, which drops the `rand` dependency and makes a draw cost the same at any
 length. The order records are read in is unchanged, and still the
@@ -150,7 +152,8 @@ read one record at a time.
 First release: FASTA, Stockholm, HMMER3 p7hmm and the BLAST, HMMER and nail hit
 tables, with the `collection`, `parse` and `source` layers behind them.
 
-[Unreleased]: https://github.com/TravisWheelerLab/sail/compare/libsail-v0.3.0...HEAD
+[Unreleased]: https://github.com/TravisWheelerLab/sail/compare/libsail-v0.4.0...HEAD
+[0.4.0]: https://github.com/TravisWheelerLab/sail/compare/libsail-v0.3.0...libsail-v0.4.0
 [0.3.0]: https://github.com/TravisWheelerLab/sail/compare/libsail-v0.2.0...libsail-v0.3.0
 [0.2.0]: https://github.com/TravisWheelerLab/sail/compare/libsail-v0.1.0...libsail-v0.2.0
 [0.1.0]: https://github.com/TravisWheelerLab/sail/releases/tag/libsail-v0.1.0
