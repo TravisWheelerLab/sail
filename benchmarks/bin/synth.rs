@@ -178,10 +178,10 @@ fn lognormal(rng: &mut StdRng) -> usize {
 /// Write [`FETCH_NAMES`] distinct record names to `<path>.names`, and report
 /// how many were written.
 //
-// distinct, because a repeated name would be fetched twice
-// by a tool that honours the order asked and once by a tool
-// that emits in file order, and the gate compares their
-// record counts
+// distinct, because a repeated name is fetched twice by a
+// tool that honours the order asked and once by a tool that
+// emits in file order, which would leave the two writing
+// different numbers of records
 fn write_names(path: &Path, records: u64) -> std::io::Result<u64> {
     let wanted = FETCH_NAMES.min(records as usize);
     let mut rng = StdRng::seed_from_u64(NAMES_SEED);
@@ -214,13 +214,12 @@ fn write_names(path: &Path, records: u64) -> std::io::Result<u64> {
 /// Write what was generated to `<path>.counts`.
 fn write_counts(path: &Path, c: &Counts) -> std::io::Result<()> {
     // generation happens here and not in the driver, so the
-    // counts have to cross a process boundary for the gate
-    // to see them. a file beside the fixture also survives
-    // --keep
+    // counts have to cross a process boundary for the board
+    // header to say what was measured. a file beside the
+    // fixture also outlives the run that wrote it
     let mut out = File::create(counts_path(path))?;
 
-    // the same key=value shape the measured binaries print,
-    // so the gate compares lines with nothing to translate
+    // key=value, which is what Fixture::counts reads back
     writeln!(out, "bytes={}", c.bytes)?;
     writeln!(out, "records={}", c.records)?;
     writeln!(out, "lines={}", c.lines)?;

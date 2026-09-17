@@ -77,11 +77,9 @@ fn draw<C>(c: C) -> Result<usize, Box<dyn std::error::Error>>
 where
     C: Indexable<Record = FastaRecord>,
 {
-    // the collection's count is the only number the
-    // generator knows, so the only one the gate can check.
-    // the sample's own size and residue total are checked
-    // below instead, since a draw of nothing would read as
-    // a very fast run
+    // the count the checks below are written against: a
+    // draw that came back empty would otherwise land in the
+    // table as a very fast run
     let total = c.len();
 
     // sample panics when asked for more than there is, and a

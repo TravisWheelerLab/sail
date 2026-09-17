@@ -12,11 +12,14 @@
 //!
 //! **The hard part is not the plumbing, it is what counts as the same work.**
 //! Each [`Op`] carries the argument for why its tools are comparable, and an
-//! operation that cannot make that argument does not belong here. Three have
-//! been turned away on that test so far: `sail count` against the `stats`
-//! peers, which do strictly more; `esl-sfetch -f` against the `fetch` peers,
-//! which scan where it needs an `.ssi` first; and `seqkit sample -n`, which
-//! draws about n records where `sail sample -n` draws exactly n.
+//! operation that cannot make that argument does not belong here. Turned away
+//! on that test so far: `sail count` against the `stats` peers, which do
+//! strictly more; `esl-sfetch -f` against the `fetch` peers, which scan where
+//! it needs an `.ssi` first; `esl-selectn` against `skim`, which draws lines
+//! rather than records; and both of seqkit's older draws, `sample -n`, which
+//! its own help says may not match the number asked for, and `sample -p`,
+//! which is bernoulli and drew 988 where 1,000 were asked. `seqkit sample2`
+//! is in, on its promise of an exact count with equal probability per record.
 //!
 //! Every measured run sends its stdout to `/dev/null`. Capturing it cost about
 //! 45 GiB a pass and, worse, was measured: half of `reformat`'s wall clock was
@@ -113,21 +116,16 @@ fn index() -> Op {
                 name: "sail",
                 program: SAIL,
                 argv: |fasta| sail().sub("index").path(fasta),
-                // "2660597 fasta records indexed to ..."
             },
             Tool {
                 name: "seqkit",
                 program: "seqkit",
                 argv: |fasta| tool("seqkit").sub("faidx").path(fasta),
-                // faidx prints progress and no count, so the
-                // .fai it wrote becomes the capture and the
-                // gate counts its lines -- one per record
             },
             Tool {
                 name: "esl-sfetch",
                 program: "esl-sfetch",
                 argv: |fasta| tool("esl-sfetch").flag("--index").path(fasta),
-                // "Indexed 2660597 sequences (2660597 names)."
             },
         ],
     }
@@ -235,10 +233,10 @@ fn grep() -> Op {
         // rather than the ID, which is the same string here
         // because synth writes no descriptions
         same_work: "keep every record whose name matches a regex (no easel equivalent)",
-        // the share of names ending in a given digit is
-        // about a tenth, but "about" is not a number the
-        // gate can use: the exact count depends on how many
-        // records the 1 GiB happened to hold
+        // about a tenth of the names end in a given digit,
+        // so this writes about a tenth of the file back out:
+        // what is timed is the scan plus that write, not the
+        // scan alone
         tools: &[
             Tool {
                 name: "sail",

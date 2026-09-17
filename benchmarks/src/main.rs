@@ -245,9 +245,8 @@ impl Fixture {
 
 impl Drop for Fixture {
     // a guard rather than a call at the end of the happy
-    // path, because the paths that skip the end are the
-    // likely ones: the pipeline failing, or the gate
-    // rejecting a count
+    // path, because the path that skips the end is the
+    // likely one: the pipeline failing partway
     //
     // **note: a signal still leaks a gigabyte -- Drop does
     //         not run on SIGINT -- but the next run
