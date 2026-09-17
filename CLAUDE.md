@@ -166,7 +166,7 @@ structured fields.
 ## sail
 
 `main.rs` parses and runs. `cli.rs` holds the clap tree, the dispatch match over
-all nineteen subcommands, and the shared argument enums. `input.rs` locates,
+all twenty subcommands, and the shared argument enums. `input.rs` locates,
 identifies and opens inputs, and decides the backend. `output.rs` opens the
 writer and writes records. `commands/` is one module per subcommand.
 
@@ -184,12 +184,13 @@ Three things meet in `resolve()`, in `input.rs`:
   `indexed`. `auto` is the only one that is not a backend, and `resolve` turns
   it into one.
 - **`Needs`** is what the operation requires of its input: `Pass` for one
-  forward scan, `Count` when the total must be known first, `Sparse` for a few
-  records by position, `Whole` when every record is needed in an order the file
-  does not hold.
+  forward scan, `Count` when the total must be known first, `Sweep` when the
+  total must be known first and the records are then read in order, `Sparse` for
+  a few records by position, `Whole` when every record is needed in an order the
+  file does not hold.
 - **The input itself**, since a pipe has no byte offsets.
 
-`resolve` is one table rather than logic spread across nineteen `run` methods,
+`resolve` is one table rather than logic spread across twenty `run` methods,
 so "fastest by default" is a claim a reader can check in one place.
 
 An explicit `--read` is an assertion and never falls back. `--read indexed` on a
@@ -197,6 +198,13 @@ pipe is an error, not a downgrade, because downgrading to memory would do the
 one thing the caller was avoiding and downgrading to streaming would report a
 number for a backend that never ran. `--format` behaves the same way: it
 asserts, and fails when the bytes disagree.
+
+`Sweep` streams where `Count` indexes, and the difference is what happens after
+the count: `tail` goes on to address the last records out of order, so it wants
+an offset table, and `skim` reads forward from there, so an offset table would
+cost 16 bytes a record to spare a pass it can just take. An index file beside
+the input removes that pass anyway — `index::count_in` reads the count out of a
+35-byte header — which is what makes `sail index` worth running first.
 
 Four commands take no `--read` because they need every record at once: `sort`,
 `shuffle`, `sample`, `rename`. Three more take none for structural reasons:

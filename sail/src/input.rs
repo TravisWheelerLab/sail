@@ -79,6 +79,8 @@ pub enum Needs {
     Pass,
     /// the record count before the first record is written
     Count,
+    /// the record count, then one forward pass over the records
+    Sweep,
     /// a few records, by name or by position
     Sparse,
     /// every record at once, in an order the file does not hold
@@ -210,6 +212,13 @@ fn resolve(mode: Mode, needs: Needs, entries: &[Input]) -> Result<Backend> {
         // given what the operation needs and whether the
         // input is seekable
         (Mode::Auto, Needs::Pass) => Ok(Backend::Stream),
+
+        // Sweep streams where Count indexes: both know the
+        // count before they write, but Count goes on to
+        // address records out of order and this one does
+        // not. an offset table would cost 16 bytes a record
+        // to spare a pass this can just take
+        (Mode::Auto, Needs::Sweep) => Ok(Backend::Stream),
         (Mode::Auto, Needs::Whole) => Ok(Backend::Memory),
         (Mode::Auto, Needs::Count | Needs::Sparse) if piped => Ok(Backend::Stream),
         (Mode::Auto, Needs::Count | Needs::Sparse) => Ok(Backend::Indexed),

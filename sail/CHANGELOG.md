@@ -10,6 +10,22 @@ underneath, so `sail` and `libsail` move independently.
 
 ## [Unreleased]
 
+### Added
+
+- `skim`, which draws records at random and writes them in the file's order
+  where `sample` writes them in a random one. It reads forward and never back,
+  so it takes `--read` and defaults to streaming: drawing 1,000 records out of a
+  200,000-record file holds 11.7 MiB where `sample` holds 108.6 MiB, and the gap
+  is the whole file rather than a constant. Both commands' help points at the
+  other, since a file large enough to need `skim` is one where nobody wants to
+  have typed `sample`.
+
+  The two are not interchangeable and `skim` is not a faster `sample`. A prefix
+  of a `sample` is itself a uniform sample; a prefix of a `skim` is biased
+  toward the front of the file, so `skim -n 1000 | head -n 200` is not 200
+  records drawn at random. File order also carries whatever the file was
+  ordered by into the output.
+
 ### Changed
 
 - `shuffle` and `sample` write a different order for a given `--seed`. libsail
@@ -20,6 +36,8 @@ underneath, so `sail` and `libsail` move independently.
 - `--seed` is the seed itself. Both commands used to build a generator from it
   and hand that over; they pass the number straight through now, and an
   unseeded run picks one `u64` for itself.
+- `sample` with neither `-n` nor `-p` now says "how many records to draw: give
+  -n or -p" rather than naming `sample`, since `skim` raises the same error.
 
 ## [0.2.1] - 2026-09-16
 

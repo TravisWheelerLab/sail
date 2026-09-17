@@ -198,6 +198,14 @@ fn cases(f: &Fixture) -> Vec<(String, Vec<String>)> {
             argv(&["sample", &path, "-n", "1", "--seed", "7"]),
         ),
         (case("shuffle"), argv(&["shuffle", &path, "--seed", "7"])),
+        (
+            case("skim"),
+            argv(&["skim", &path, "-n", "2", "--seed", "7"]),
+        ),
+        (
+            case("skim-fraction"),
+            argv(&["skim", &path, "-p", "0.5", "--seed", "7"]),
+        ),
         (case("sort"), argv(&["sort", &path])),
         (case("sort-size"), argv(&["sort", &path, "--key", "size"])),
         (case("stats"), argv(&["stats", &path])),
@@ -519,7 +527,7 @@ fn index_writes_an_index_file_that_loads_back() {
 // where the in-memory path re-wraps them, which is the one
 // deliberate difference between the backends. --rewrap puts
 // them back in step, which the test below checks
-const AGREE: [&[&str]; 7] = [
+const AGREE: [&[&str]; 8] = [
     &["count"],
     &["names"],
     &["stats"],
@@ -527,6 +535,9 @@ const AGREE: [&[&str]; 7] = [
     &["reformat"],
     &["head", "-n", "2"],
     &["tail", "-n", "2"],
+    // seeded, so the three backends are drawing the same
+    // records and only the reading differs
+    &["skim", "-n", "2", "--seed", "7"],
 ];
 
 #[test]

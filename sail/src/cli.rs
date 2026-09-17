@@ -16,6 +16,7 @@ use crate::commands::reformat::ReformatArgs;
 use crate::commands::rename::RenameArgs;
 use crate::commands::sample::SampleArgs;
 use crate::commands::shuffle::ShuffleArgs;
+use crate::commands::skim::SkimArgs;
 use crate::commands::sort::SortArgs;
 use crate::commands::split::SplitArgs;
 use crate::commands::stats::StatsArgs;
@@ -46,6 +47,7 @@ impl Cli {
             Command::Rename(args) => args.run(),
             Command::Sample(args) => args.run(),
             Command::Shuffle(args) => args.run(),
+            Command::Skim(args) => args.run(),
             Command::Sort(args) => args.run(),
             Command::Split(args) => args.run(),
             Command::Stats(args) => args.run(),
@@ -93,11 +95,14 @@ enum Command {
     /// Rewrite every record name
     Rename(RenameArgs),
 
-    /// Draw records at random
+    /// Draw records at random, in a random order (see also: skim)
     Sample(SampleArgs),
 
     /// Put the records in a random order
     Shuffle(ShuffleArgs),
+
+    /// Draw records at random, keeping the file's order (see also: sample)
+    Skim(SkimArgs),
 
     /// Order records by name or by size
     Sort(SortArgs),
