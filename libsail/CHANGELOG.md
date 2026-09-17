@@ -17,6 +17,18 @@ as they were.
 
 ### Added
 
+- `select::Selection`, `m` of `0..n` drawn uniformly at random, ascending, in
+  constant memory. Vitter's Method D while the gaps are long and Algorithm A
+  once they are short, picking between them on the alpha crossover he reports.
+  Reads nothing, so the choice is testable with no file behind it, and a caller
+  crossing the gap between two selected records decides for itself whether to
+  scan it or seek it.
+- `Indexable::sample_in_order(m, seed)`, `m` records drawn uniformly at random
+  and yielded in the order the collection holds them. A file-backed collection
+  pays `m` ascending reads where `sample` pays `m` scattered ones, which is what
+  decides the cost on a file too large to cache. Returns an iterator rather than
+  a collection and allocates nothing, so it is additive: `sample` and `permute`
+  are unchanged and the two are not interchangeable.
 - `collection::Drawn<I>`, what `permute` and `sample` now return. Holds a
   `feisty::Permutation` over `0..len()` and a count of how many of its positions
   to keep. Allocates nothing per record. `permute_with` over 2.4 billion

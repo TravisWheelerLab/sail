@@ -37,6 +37,7 @@ the shared traits.
 | `lines.rs` | row framing for hit tables |
 | `parse.rs` | the `Parse` trait |
 | `pread.rs` | positioned reads, private |
+| `select.rs` | `Selection`, which records a sequential sample keeps |
 | `seq/` | FASTA, Stockholm, HMMER3 p7hmm |
 | `source.rs` | `Source`, `FileSource`, `MmapSource` |
 | `tbl/` | `Hit`, `HitColumns`, `WriteRow`, `Table`/`IndexedTable`, and the BLAST, HMMER and nail layouts |
@@ -137,6 +138,13 @@ an `Rng`, so a draw reproduces from its recorded seed alone rather than from
 every prior use of a generator. The reads are no less scattered for it — `Drawn`
 hands positions back in the permutation's order — so this buys allocation, not
 locality.
+
+`sample_in_order` is the third shape: an iterator rather than a collection.
+Method D is sequential state and cannot answer `get(7)` without having run the
+first seven decisions, so anything `Indexable` would have to store the indices —
+which is the 8m bytes the method exists to avoid. `select.rs` holds the
+arithmetic with no I/O in it, so a caller driving `index::Reader` can use the
+same selection and decide for itself whether to scan a gap or seek it.
 
 Sorting and grouping materialize the key once per record rather than per
 comparison, because `get` may be a disk read and a parse. `group_by` returns an

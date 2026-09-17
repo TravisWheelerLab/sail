@@ -4,8 +4,9 @@
 //! Organised by concern rather than by format: [`seq`] and [`tbl`] hold the
 //! record types, [`index`] finds record boundaries in a file, [`collection`]
 //! addresses records by position, and [`parse`] reads text back into records.
-//! [`format`] tells the formats apart, and an [`index::Index`] saves and loads
-//! itself so a file need not be scanned twice.
+//! [`format`] tells the formats apart, an [`index::Index`] saves and loads
+//! itself so a file need not be scanned twice, and [`select`] chooses which
+//! records a sample keeps without reading any of them.
 
 pub mod collection;
 pub mod error;
@@ -15,6 +16,7 @@ pub mod lines;
 pub mod parse;
 #[cfg(any(unix, windows))]
 mod pread;
+pub mod select;
 pub mod seq;
 #[cfg(any(unix, windows))]
 pub mod source;

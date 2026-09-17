@@ -19,6 +19,7 @@ use feisty::Permutation;
 use indexmap::IndexMap;
 
 use crate::Record;
+use crate::select::Selection;
 
 // ---
 
@@ -286,6 +287,34 @@ pub trait Indexable {
         );
 
         Drawn::new(self, m, seed)
+    }
+
+    /// `m` records drawn uniformly at random without replacement, yielded in
+    /// the order the collection holds them.
+    ///
+    /// Reads forward and never back, so a file-backed collection pays `m`
+    /// ascending reads rather than `m` scattered ones. Nothing is allocated:
+    /// where [`sample`](Self::sample) hands back a collection this hands back a
+    /// one-pass traversal, so the two are not interchangeable.
+    ///
+    /// # Panics
+    ///
+    /// If `m > len()`.
+    fn sample_in_order(&self, m: usize, seed: u64) -> impl Iterator<Item = Self::Yield<'_>> {
+        // note: the one combinator here that never needs a
+        //       random get -- it asks for an increasing
+        //       index and is consumed once. the others
+        //       either compare arbitrary pairs while sorting
+        //       or return a View, which forwards an
+        //       arbitrary index to inner.get for as long as
+        //       it lives. so Indexable is a superset of what
+        //       this needs, and if more ops arrive with the
+        //       same shape the seam is a count plus a
+        //       monotone get. index::Reader could not
+        //       implement that seam anyway: no len, advance
+        //       takes &mut, and it answers with Result
+        //       where get answers with Option
+        Selection::new(self.len(), m, seed).map(|n| expect_record(self, n))
     }
 
     /// The records for which `predicate` holds, in their original order.
@@ -1186,6 +1215,41 @@ mod tests {
         // so Drawn has to bound the call itself
         assert!(nums(0, 20).sample(5, 1).get(5).is_none());
         assert!(nums(0, 20).permute(1).get(20).is_none());
+    }
+
+    #[test]
+    fn an_ordered_sample_yields_file_order_and_agrees_with_its_selection() {
+        let all = nums(0, 500);
+        let got: Vec<u32> = all.sample_in_order(20, 9).map(|r| r.0).collect();
+
+        assert_eq!(got.len(), 20);
+        assert!(got.windows(2).all(|w| w[0] < w[1]), "file order: {got:?}");
+
+        let want: Vec<u32> = Selection::new(500, 20, 9).map(|n| n as u32).collect();
+        assert_eq!(got, want, "the same records the selection names");
+    }
+
+    #[test]
+    fn an_ordered_sample_of_everything_is_the_collection_itself() {
+        let all = nums(0, 30);
+
+        assert_eq!(
+            all.sample_in_order(30, 4).map(|r| r.0).collect::<Vec<_>>(),
+            seen(&all)
+        );
+    }
+
+    #[test]
+    fn an_ordered_sample_reads_a_view_as_readily_as_a_collection() {
+        // Indexable is Indexable however it was narrowed, so
+        // the ordered sample sees the view's positions and
+        // not the underlying collection's
+        let evens = nums(0, 100).filter(|r| r.0 % 2 == 0);
+        let got: Vec<u32> = evens.sample_in_order(10, 2).map(|r| r.0).collect();
+
+        assert_eq!(got.len(), 10);
+        assert!(got.iter().all(|n| n % 2 == 0), "{got:?}");
+        assert!(got.windows(2).all(|w| w[0] < w[1]), "{got:?}");
     }
 
     #[test]
