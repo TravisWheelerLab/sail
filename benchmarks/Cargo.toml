@@ -13,6 +13,7 @@ clap = { version = "4", features = ["derive"] }
 michi = "0.1.0"
 anyhow = "1.0.104"
 memchr = "2.8"
+libc = "0.2"
 rand = "0.10.2"
 
 [[bin]]
@@ -26,6 +27,14 @@ path = "bin/sample.rs"
 [[bin]]
 name = "mmap"
 path = "bin/mmap.rs"
+
+[[bin]]
+name = "order"
+path = "bin/order.rs"
+
+[[bin]]
+name = "evict"
+path = "bin/evict.rs"
 
 [[bin]]
 name = "synth"

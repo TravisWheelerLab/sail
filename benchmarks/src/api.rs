@@ -17,7 +17,7 @@ use anyhow::bail;
 use michi::{Cmd, PipelineBuilder, Step, Table};
 
 use crate::board::Board;
-use crate::{Fixture, Opts, commas, ensure_fixture, reset};
+use crate::{Fixture, Opts, commas, ensure_fixture, evict, reset};
 
 // ---
 
@@ -74,6 +74,20 @@ fn benches() -> Vec<Bench> {
             ],
         },
         Bench {
+            name: "order",
+            same_work: "read 100,000 records out of a 1 GiB indexed collection",
+            variants: &[
+                Variant {
+                    name: "scattered",
+                    sub: "reference",
+                },
+                Variant {
+                    name: "in order",
+                    sub: "run",
+                },
+            ],
+        },
+        Bench {
             name: "mmap",
             same_work: "read 1,000,000 records out of an indexed collection",
             variants: &[
@@ -117,11 +131,12 @@ pub(crate) fn run(which: Option<&str>, o: &Opts) -> anyhow::Result<()> {
     let counts = fixture.counts()?;
     let get = |k: &str| counts.get(k).copied().unwrap_or(0);
     let header = format!(
-        "bench.fa - {} bytes, {} records, {} residues - min of {}",
+        "bench.fa - {} bytes, {} records, {} residues - min of {} - {}",
         commas(get("bytes")),
         commas(get("records")),
         commas(get("residues")),
-        o.repeat
+        o.repeat,
+        if o.warm { "warm" } else { "cold" }
     );
 
     let plan: Vec<(&'static str, &'static str, Vec<&'static str>)> = chosen
@@ -157,8 +172,8 @@ fn one(bench: &Bench, fixture: &Fixture, board: &Board, o: &Opts) -> anyhow::Res
 
     let mut pipeline = PipelineBuilder::new()
         .stderr_dir(out.join("stderr"))
-        .step(Step::serial([crate::build(&[bench.name])]).name("build"))
-        .step(warmup(bench, &fixture.fasta));
+        .step(Step::serial([crate::build(&[bench.name, "evict"])]).name("build"))
+        .step(dry_run(bench, &fixture.fasta));
 
     for variant in bench.variants {
         pipeline =
@@ -174,16 +189,20 @@ fn one(bench: &Bench, fixture: &Fixture, board: &Board, o: &Opts) -> anyhow::Res
     Ok(())
 }
 
-/// One unrecorded run of each variant, so a measured one is not the first to
-/// touch the file.
-fn warmup(bench: &Bench, fasta: &Path) -> Step {
+/// One unrecorded run of each variant, so a measured one is never the first to
+/// load the binary and never the first to fail.
+//
+// the page cache was what this warmed until eviction took
+// that over, and eviction runs before every measured run
+// rather than once at the top
+fn dry_run(bench: &Bench, fasta: &Path) -> Step {
     let mut cmds = Vec::new();
     for variant in bench.variants {
         cmds.push(reset(fasta));
-        cmds.push(cmd(bench, variant, fasta).name(format!("warm {}", variant.name)));
+        cmds.push(cmd(bench, variant, fasta).name(format!("dry {}", variant.name)));
     }
 
-    Step::serial(cmds).name("warmup")
+    Step::serial(cmds).name("dry run")
 }
 
 /// `repeat` runs of one variant, each from a clean slate.
@@ -195,6 +214,13 @@ fn runs(bench: &Bench, variant: &Variant, fasta: &Path, o: &Opts) -> Vec<Cmd> {
         // otherwise be there to be found, which is a
         // different measurement
         cmds.push(reset(fasta));
+
+        // after reset and immediately before the command,
+        // so nothing between the two pulls the file back in
+        if !o.warm {
+            cmds.push(evict(fasta));
+        }
+
         cmds.push(
             cmd(bench, variant, fasta)
                 .name(format!("{}#{i}", variant.sub))

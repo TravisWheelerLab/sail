@@ -28,7 +28,7 @@ use anyhow::bail;
 use michi::{Cmd, PipelineBuilder, Step, Table};
 
 use crate::board::Board;
-use crate::{Fixture, Opts, commas, ensure_fixture, reset};
+use crate::{Fixture, Opts, commas, ensure_fixture, evict, reset};
 
 // ---
 
@@ -69,6 +69,8 @@ fn ops() -> Vec<Op> {
         filter(),
         sort(),
         dedup(),
+        skim(),
+        sample(),
     ]
 }
 
@@ -310,6 +312,86 @@ fn sort() -> Op {
 }
 
 /// Dropping records with a repeated name.
+/// Drawing a fixed number of records at random, keeping the file's order.
+fn skim() -> Op {
+    Op {
+        name: "skim",
+        // **note: seqkit sample -p is NOT in here. it is
+        //         bernoulli, so it draws n +/- sqrt(n) and
+        //         not n, and a tool that may return 988
+        //         records where another returns 1000 is
+        //         doing different work. sample2 -2 is the
+        //         fair peer: its own help promises an exact
+        //         count with equal probability per record,
+        //         which is what skim promises
+        same_work: "draw exactly 10,000 records at random and write them in the file's order",
+        tools: &[
+            Tool {
+                name: "sail",
+                program: SAIL,
+                argv: |fasta| {
+                    sail()
+                        .sub("skim")
+                        .arg("-n", "10000")
+                        .arg("--seed", "7")
+                        .path(fasta)
+                },
+            },
+            Tool {
+                name: "seqkit",
+                program: "seqkit",
+                // -2 is two-pass, which is what sail does
+                // without an index beside the file, and
+                // reset deletes that index before every run
+                argv: |fasta| {
+                    tool("seqkit")
+                        .sub("sample2")
+                        .arg("-n", "10000")
+                        .flag("-2")
+                        .arg("--rand-seed", "7")
+                        .path(fasta)
+                },
+            },
+        ],
+    }
+}
+
+/// Drawing a fixed number of records at random, in a random order.
+fn sample() -> Op {
+    Op {
+        name: "sample",
+        // separate from skim rather than another row on it:
+        // these two write the records in a random order and
+        // skim's two write them in the file's, so one board
+        // would be comparing four tools doing two jobs
+        same_work: "draw exactly 10,000 records at random and write them in a random order",
+        tools: &[
+            Tool {
+                name: "sail",
+                program: SAIL,
+                argv: |fasta| {
+                    sail()
+                        .sub("sample")
+                        .arg("-n", "10000")
+                        .arg("--seed", "7")
+                        .path(fasta)
+                },
+            },
+            Tool {
+                name: "seqkit",
+                program: "seqkit",
+                argv: |fasta| {
+                    tool("seqkit")
+                        .sub("sample2")
+                        .arg("-n", "10000")
+                        .arg("--rand-seed", "7")
+                        .path(fasta)
+                },
+            },
+        ],
+    }
+}
+
 fn dedup() -> Op {
     Op {
         name: "dedup",
@@ -419,17 +501,23 @@ fn build_sail() -> Cmd {
 
 // --- pipeline pieces
 
-/// One unrecorded run of each tool.
-fn warmup(op: &Op, fasta: &Path) -> Step {
+/// One unrecorded run of each tool, so a measured one is never the first to
+/// load a binary and never the first to fail.
+//
+// this was the page cache's warmup until eviction took that
+// over, and eviction runs before every measured run rather
+// than once at the top. what is left is the dynamic loader,
+// and a bad invocation surfacing before anything is timed
+fn dry_run(op: &Op, fasta: &Path) -> Step {
     let mut cmds = Vec::new();
     for tool in op.tools {
-        // no bench field and no capture, so a warmup reaches
-        // neither the report nor the gate
+        // no bench field, so a dry run reaches the board no
+        // more than it reaches the report
         cmds.push(reset(fasta));
-        cmds.push((tool.argv)(fasta).name(format!("warm {}", tool.name)));
+        cmds.push((tool.argv)(fasta).name(format!("dry {}", tool.name)));
     }
 
-    Step::serial(cmds).name("warmup")
+    Step::serial(cmds).name("dry run")
 }
 
 /// `repeat` runs of one tool, each from a clean slate and each capturing its
@@ -439,6 +527,14 @@ fn runs(op: &Op, tool: &Tool, fasta: &Path, o: &Opts) -> Vec<Cmd> {
 
     for i in 1..=o.repeat {
         cmds.push(reset(fasta));
+
+        // after reset, so the pages reset dirtied are gone
+        // too, and immediately before the command, so
+        // nothing between them pulls the file back in
+        if !o.warm {
+            cmds.push(evict(fasta));
+        }
+
         cmds.push(
             (tool.argv)(fasta)
                 .name(format!("{}#{i}", tool.name))
@@ -519,11 +615,12 @@ pub(crate) fn run(which: Option<&str>, o: &Opts) -> anyhow::Result<()> {
     let counts = fixture.counts()?;
     let get = |k: &str| counts.get(k).copied().unwrap_or(0);
     let header = format!(
-        "bench.fa - {} bytes, {} records, {} residues - min of {}",
+        "bench.fa - {} bytes, {} records, {} residues - min of {} - {}",
         commas(get("bytes")),
         commas(get("records")),
         commas(get("residues")),
-        o.repeat
+        o.repeat,
+        if o.warm { "warm" } else { "cold" }
     );
 
     let plan: Vec<(&'static str, &'static str, Vec<&'static str>)> = chosen
@@ -559,8 +656,8 @@ fn one(op: &Op, fixture: &Fixture, board: &Board, o: &Opts) -> anyhow::Result<()
 
     let mut pipeline = PipelineBuilder::new()
         .stderr_dir(out.join("stderr"))
-        .step(Step::serial([build_sail()]).name("build"))
-        .step(warmup(op, &fixture.fasta));
+        .step(Step::serial([build_sail(), crate::build(&["evict"])]).name("build"))
+        .step(dry_run(op, &fixture.fasta));
 
     for tool in op.tools {
         pipeline = pipeline.step(Step::serial(runs(op, tool, &fixture.fasta, o)).name(tool.name));

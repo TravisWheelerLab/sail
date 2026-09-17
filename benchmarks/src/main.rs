@@ -74,6 +74,11 @@ pub(crate) struct Opts {
     /// Generate the fixture again even if one is already there.
     #[arg(long)]
     pub(crate) fresh: bool,
+
+    /// Leave the fixture in the page cache between runs, where the default
+    /// drops it so every measured run reads from the disk.
+    #[arg(long)]
+    pub(crate) warm: bool,
 }
 
 impl Opts {
@@ -104,6 +109,20 @@ pub(crate) fn reset(fasta: &Path) -> Cmd {
         .path(Fixture::beside_path(fasta, "fai"))
         .path(Fixture::beside_path(fasta, "ssi"))
         .path(Fixture::beside_path(fasta, "saidx"))
+}
+
+/// Drop the fixture's pages before a measured run, so the read is a real one.
+//
+// this box holds 60 GiB and the fixture is one, so without
+// it the first run pulls the gigabyte in and every run after
+// reads it out of memory: a cold `cat` of the fixture takes
+// 0.273s and a warm one 0.008s, which is most of what the
+// suite used to be reporting
+pub(crate) fn evict(fasta: &Path) -> Cmd {
+    Cmd::new(binary("evict"))
+        .name("evict")
+        .path(fasta)
+        .path(Fixture::beside_path(fasta, "names"))
 }
 
 /// Generate the fixture if it is not already there.

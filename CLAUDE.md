@@ -285,12 +285,25 @@ proposals being thought through, they are not tracked, and they are never
 committed. Provenance lives in commit messages and in the code, so a proposal
 here can be rewritten or thrown away without ceremony.
 
-**Benchmarks.** `benchmarks/` is a separate cargo project, not a workspace
-member, and is not tracked. Its `setup.sh` fetches pinned builds of seqkit and
-the Easel miniapps into `benchmarks/tools`, and nothing is installed outside
-that directory: no package manager, no `~/.local/bin`, no PATH edits. The
-versions are pinned because they are part of the measurement: a number is
-comparable only against another taken with the same peer.
+**Benchmarks.** `benchmarks/` is a separate cargo project rather than a
+workspace member. Its `setup.sh` fetches pinned builds of seqkit and the Easel
+miniapps into `benchmarks/tools`, and nothing is installed outside that
+directory: no package manager, no `~/.local/bin`, no PATH edits. The versions
+are pinned because they are part of the measurement: a number is comparable
+only against another taken with the same peer.
+
+Every measured run reads from the disk. The driver drops the fixture's pages
+before each one, because a machine with room to hold a gigabyte will hold it,
+and without eviction the suite measures memcpy out of the page cache: a cold
+`cat` of the fixture takes 0.273s where a warm one takes 0.008s. `--warm` asks
+for the old behaviour, and the board's header records which it was, since the
+two are not comparable. What used to be the warmup step is a dry run now — it
+loads the binaries and surfaces a bad invocation before anything is timed, and
+it no longer has anything to do with the page cache.
+
+A benchmark that builds an index before reading has to evict again on its own.
+`bin/order.rs` does, after its index and before its first read, because
+`IndexedFasta::open` scans the whole file and puts every page straight back.
 
 ## checks
 
