@@ -56,8 +56,11 @@ as they were.
 ### Removed
 
 - The `rand` dependency, and with it seven crates from every downstream build.
-  `feisty` has none of its own. What a seed reproduces is now fixed by feisty's
-  `DEFAULT_ROUNDS` and round function rather than by `rand`'s version.
+  `feisty` has none of its own. What a seed reproduces is now fixed by feisty
+  rather than by `rand`'s version: `DEFAULT_ROUNDS` and the round function for
+  `permute` and `sample`, and `splitmix64` for `sample_in_order`, which is the
+  generator keying the other two. One seed therefore means one thing across all
+  three. Needs feisty 0.1.1, where `splitmix64` became public.
 
 ## [0.3.0] - 2026-09-16
 

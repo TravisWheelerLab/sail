@@ -8,34 +8,10 @@
 //!
 //! [`Delimit`]: crate::index::Delimit
 
-// --- the generator
-
-/// SplitMix64's golden-ratio increment.
-const GAMMA: u64 = 0x9e37_79b9_7f4a_7c15;
-
-/// Stafford's Mix13 multipliers, whose shift amounts came out of the same
-/// search, so do not change one without the others.
-const MIX_A: u64 = 0xbf58_476d_1ce4_e5b9;
-const MIX_B: u64 = 0x94d0_49bb_1331_11eb;
+use feisty::splitmix64::SplitMix64;
 
 /// Scales a 53-bit integer into the unit interval.
 const UNIT: f64 = 1.0 / (1u64 << 53) as f64;
-
-// TODO: feisty keys its permutation with this same
-//       generator and is about to make it public. swap this
-//       for the export once it lands, so the two combinators
-//       draw from one implementation rather than two copies.
-//       the constants are identical, so the swap changes no
-//       draw and invalidates no recorded seed
-fn step(state: &mut u64) -> u64 {
-    *state = state.wrapping_add(GAMMA);
-
-    let mut z = *state;
-    z = (z ^ (z >> 30)).wrapping_mul(MIX_A);
-    z = (z ^ (z >> 27)).wrapping_mul(MIX_B);
-
-    z ^ (z >> 31)
-}
 
 // ---
 
@@ -58,7 +34,12 @@ pub struct Selection {
     /// Where the next skip is counted from.
     at: usize,
 
-    state: u64,
+    /// The draws Method D and Algorithm A consume.
+    //
+    // the generator feisty keys its permutations with, so
+    // `sample` and `sample_in_order` under one seed are
+    // drawing from one implementation and not two copies
+    rng: SplitMix64,
 }
 
 impl Selection {
@@ -77,18 +58,18 @@ impl Selection {
             // a caller handing over 0 is handing over a
             // number, not an absence, and splitmix64's step
             // is what separates it from any other seed
-            state: seed,
+            rng: SplitMix64::new(seed),
         }
     }
 
     /// A uniform draw from `[0, 1)`.
     fn unit(&mut self) -> f64 {
-        (step(&mut self.state) >> 11) as f64 * UNIT
+        (self.rng.next_u64() >> 11) as f64 * UNIT
     }
 
     /// A uniform draw from `(0, 1]`, for the calls that take its logarithm.
     fn positive(&mut self) -> f64 {
-        ((step(&mut self.state) >> 11) + 1) as f64 * UNIT
+        ((self.rng.next_u64() >> 11) + 1) as f64 * UNIT
     }
 }
 
