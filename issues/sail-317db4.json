@@ -13,11 +13,19 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-09T21:28:01.722959268Z",
-  "updated_at": "2026-10-09T21:28:01.722959268Z",
+  "updated_at": "2026-10-09T21:28:01.875563284Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
-  "notes": [],
+  "notes": [
+    {
+      "at": "2026-10-09T21:28:01.875562764Z",
+      "author": "Jack Roddy/d58bf845",
+      "text": "count as a free fn reads as 'count this source'; as a constructor-and-method it invites counting and then reusing a consumed reader. Leaning free fn.",
+      "commit": "06334a4",
+      "branch": "main"
+    }
+  ],
   "stamps": {
     "created": {
       "commit": "06334a4",
