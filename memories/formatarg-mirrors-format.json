@@ -1,0 +1,10 @@
+{
+  "slug": "formatarg-mirrors-format",
+  "text": "FormatArg in sail mirrors libsail's Format as a separate clap-facing type so libsail need not depend on clap; the From impl is the whole of the mapping.",
+  "created_at": "2026-10-09T21:29:55.81868521Z",
+  "updated_at": "2026-10-09T21:29:55.81868521Z",
+  "stamp": {
+    "commit": "06334a4",
+    "branch": "main"
+  }
+}
