@@ -2,9 +2,9 @@
   "slug": "commands-with-no-read-flag",
   "text": "Four sail commands take no --read because they need every record at once: sort, shuffle, sample, rename. Three more take none for structural reasons: split reindexes the whole collection, validate needs the disk-backed type to name the record that failed, and index writes byte offsets and so refuses stdin outright.",
   "created_at": "2026-10-09T21:29:30.976617987Z",
-  "updated_at": "2026-10-09T21:29:30.976617987Z",
+  "updated_at": "2026-10-09T21:42:36.1877416Z",
   "stamp": {
-    "commit": "06334a4",
-    "branch": "main"
+    "commit": "dcaecb1",
+    "branch": "dev"
   }
 }
