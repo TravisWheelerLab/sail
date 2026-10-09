@@ -1,0 +1,28 @@
+{
+  "id": "sail-f5a79d",
+  "title": "One index-file version bump for alignment and the parts file, or two?",
+  "body": "Padding the header for alignment and adding the parts file both change what sits on disk. Landing them together means one older layout to keep reading rather than two.",
+  "type": "decision",
+  "status": "open",
+  "priority": 3,
+  "labels": [],
+  "parent": "sail-31fdd9",
+  "blocked_by": [],
+  "related": [],
+  "assignee": null,
+  "lease_expires": null,
+  "defer_until": null,
+  "created_at": "2026-10-09T21:28:01.808261489Z",
+  "updated_at": "2026-10-09T21:28:01.808261489Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
+  "notes": [],
+  "stamps": {
+    "created": {
+      "commit": "06334a4",
+      "branch": "main"
+    },
+    "closed": null
+  }
+}
