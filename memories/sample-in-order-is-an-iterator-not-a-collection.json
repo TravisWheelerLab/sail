@@ -1,0 +1,10 @@
+{
+  "slug": "sample-in-order-is-an-iterator-not-a-collection",
+  "text": "sample_in_order is an iterator rather than an Indexable because Method D (sequential sampling) is sequential state and cannot answer get(7) without having run the first seven decisions; an Indexable would have to store the indices, which is the 8m bytes the method exists to avoid. select.rs holds the arithmetic with no I/O, so a caller driving index::Reader can use the same Selection and decide for itself whether to scan a gap or seek it. sail skim is that caller.",
+  "created_at": "2026-10-09T21:29:30.944944261Z",
+  "updated_at": "2026-10-09T21:29:30.944944261Z",
+  "stamp": {
+    "commit": "06334a4",
+    "branch": "main"
+  }
+}
