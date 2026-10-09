@@ -1,0 +1,10 @@
+{
+  "slug": "sentinel-newline-is-per-stream",
+  "text": "scan and index::Reader both seed a sentinel newline before byte 0 so a file opening with a delimiter needs no special case. The sentinel is per stream, not per file, so Read::chain of two files silently loses the first record of the second when the first file has no trailing newline. sail is immune only because every multi-input command builds a fresh Reader per entry.",
+  "created_at": "2026-10-09T21:29:55.755004109Z",
+  "updated_at": "2026-10-09T21:29:55.755004109Z",
+  "stamp": {
+    "commit": "06334a4",
+    "branch": "main"
+  }
+}
