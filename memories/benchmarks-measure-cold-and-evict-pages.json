@@ -1,0 +1,10 @@
+{
+  "slug": "benchmarks-measure-cold-and-evict-pages",
+  "text": "benchmarks/ is a separate cargo project, not a workspace member. The driver drops the fixture's pages before each measured run, because without eviction the suite measures memcpy out of the page cache (a cold cat of the fixture took 0.273s, a warm one 0.008s). --warm asks for the old behaviour and the board's header records which it was. The old warmup step is now a dry run that only loads binaries and surfaces a bad invocation.",
+  "created_at": "2026-10-09T21:29:55.842488624Z",
+  "updated_at": "2026-10-09T21:29:55.842488624Z",
+  "stamp": {
+    "commit": "06334a4",
+    "branch": "main"
+  }
+}
