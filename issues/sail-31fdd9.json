@@ -5,7 +5,10 @@
   "type": "milestone",
   "status": "open",
   "priority": 2,
-  "labels": [],
+  "labels": [
+    "libsail",
+    "sail"
+  ],
   "parent": null,
   "blocked_by": [],
   "related": [],
@@ -13,7 +16,7 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-09T21:28:01.711327875Z",
-  "updated_at": "2026-10-09T21:28:01.711327875Z",
+  "updated_at": "2026-10-09T21:38:00.369757558Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
