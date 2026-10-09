@@ -7,13 +7,15 @@
   "priority": 3,
   "labels": [],
   "parent": "sail-31fdd9",
-  "blocked_by": [],
+  "blocked_by": [
+    "sail-f5a79d"
+  ],
   "related": [],
   "assignee": null,
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-09T21:28:01.744163559Z",
-  "updated_at": "2026-10-09T21:28:01.744163559Z",
+  "updated_at": "2026-10-09T21:28:01.840226409Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
