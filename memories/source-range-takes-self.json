@@ -2,9 +2,9 @@
   "slug": "source-range-takes-self",
   "text": "Source::range takes &self, not &mut self, because Indexable::get does; a Read/Seek bound would put a RefCell or a Mutex behind every disk-backed collection. It returns Cow so MmapSource can borrow and copy nothing, which is most of what mmap is there for. Parse has no receiver for the same reason. FileSource pays a syscall and an allocation per range.",
   "created_at": "2026-10-09T21:29:30.910727554Z",
-  "updated_at": "2026-10-09T21:29:30.910727554Z",
+  "updated_at": "2026-10-09T21:42:36.36574959Z",
   "stamp": {
-    "commit": "06334a4",
-    "branch": "main"
+    "commit": "dcaecb1",
+    "branch": "dev"
   }
 }
