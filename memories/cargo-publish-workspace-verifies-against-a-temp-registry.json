@@ -1,0 +1,10 @@
+{
+  "slug": "cargo-publish-workspace-verifies-against-a-temp-registry",
+  "text": "Interdependent crates publish together with cargo publish --workspace (stable since Rust 1.90). Cargo packages every member, builds a temporary registry under target/package/tmp-registry, verifies each dependent against it, then uploads in dependency order. cargo package -p on one member fails because the dependent resolves its dependency from crates.io; check a release with cargo package --workspace. Manifest version requirements still need editing by hand.",
+  "created_at": "2026-10-09T21:29:55.87434958Z",
+  "updated_at": "2026-10-09T21:29:55.87434958Z",
+  "stamp": {
+    "commit": "06334a4",
+    "branch": "main"
+  }
+}
