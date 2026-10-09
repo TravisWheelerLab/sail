@@ -1,0 +1,7 @@
+{
+  "prefix": "sail",
+  "schema_version": 1,
+  "created_at": "2026-10-09T21:04:43.108671906Z",
+  "lease_minutes": 15,
+  "stale_after": 50
+}
