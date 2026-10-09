@@ -2,9 +2,9 @@
   "slug": "resolve-is-one-table",
   "text": "In sail, resolve() in input.rs is the one place a backend is chosen: Mode (what the caller asked: auto, stream, memory, indexed), Needs (what the operation requires: Pass, Count, Sweep, Sparse, Whole) and the input (a pipe has no offsets) meet in one table, so 'fastest by default' is checkable in one place.",
   "created_at": "2026-10-09T21:29:55.795106773Z",
-  "updated_at": "2026-10-09T21:29:55.795106773Z",
+  "updated_at": "2026-10-09T21:42:36.309108533Z",
   "stamp": {
-    "commit": "06334a4",
-    "branch": "main"
+    "commit": "dcaecb1",
+    "branch": "dev"
   }
 }
