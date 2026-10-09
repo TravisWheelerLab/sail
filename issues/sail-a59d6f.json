@@ -8,14 +8,15 @@
   "labels": [],
   "parent": "sail-31fdd9",
   "blocked_by": [
-    "sail-9d931d"
+    "sail-9d931d",
+    "sail-978552"
   ],
   "related": [],
   "assignee": null,
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-09T21:28:01.754931518Z",
-  "updated_at": "2026-10-09T21:28:01.847030738Z",
+  "updated_at": "2026-10-09T21:28:01.853856016Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
