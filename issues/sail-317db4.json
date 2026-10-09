@@ -1,0 +1,28 @@
+{
+  "id": "sail-317db4",
+  "title": "Reader counts, and knows where it is: count, position, advance_to",
+  "body": "    /// How many records `bytes` holds, by one pass over them.\n    pub fn count(bytes: impl Read, format: Format) -> Result<usize>;\n\n    impl<R: Read> Reader<R> {\n        /// The global index of the current record.\n        pub fn position(&self) -> usize;\n\n        /// Advance until the record at `n` is current. `n` must be at or after\n        /// the current position, since a Reader cannot go back.\n        pub fn advance_to(&mut self, n: usize) -> Result<bool>;\n    }\n\nWhich collapses pass 2 to:\n\n    let mut reader = Reader::new(File::open(path)?, format);\n\n    for n in Selection::new(count, m, seed) {\n        if !reader.advance_to(n)? { break; }\n        take(reader.record());\n    }\n\nadvance_to is where a caller with an index would seek instead of scan, so the decision stays where it was.\n\ncount takes one source and not a chained one, deliberately: see the multi-source reader issue for why Read::chain loses records.",
+  "type": "feature",
+  "status": "open",
+  "priority": 2,
+  "labels": [],
+  "parent": "sail-31fdd9",
+  "blocked_by": [],
+  "related": [],
+  "assignee": null,
+  "lease_expires": null,
+  "defer_until": null,
+  "created_at": "2026-10-09T21:28:01.722959268Z",
+  "updated_at": "2026-10-09T21:28:01.722959268Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
+  "notes": [],
+  "stamps": {
+    "created": {
+      "commit": "06334a4",
+      "branch": "main"
+    },
+    "closed": null
+  }
+}
