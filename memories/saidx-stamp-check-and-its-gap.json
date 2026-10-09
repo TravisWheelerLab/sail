@@ -1,0 +1,10 @@
+{
+  "slug": "saidx-stamp-check-and-its-gap",
+  "text": "Index::write(path, data) stats the data file itself and stamps its length and mtime (secs u64 + nanos u32) into the header, writing through a temp file and a rename. The free fn is_current(path, data) re-stats and refuses an index that disagrees. This catches ordinary edits, not all: a same-size change within one mtime tick goes undetected, a known gap.",
+  "created_at": "2026-10-09T21:29:55.778816883Z",
+  "updated_at": "2026-10-09T21:29:55.778816883Z",
+  "stamp": {
+    "commit": "06334a4",
+    "branch": "main"
+  }
+}
