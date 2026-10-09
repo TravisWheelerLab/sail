@@ -16,7 +16,7 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-09T21:28:01.73339981Z",
-  "updated_at": "2026-10-09T21:28:01.899405755Z",
+  "updated_at": "2026-10-09T21:28:01.907285586Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
@@ -25,6 +25,13 @@
       "at": "2026-10-09T21:28:01.899405285Z",
       "author": "Jack Roddy/d58bf845",
       "text": "Aggregate<I> is not involved: this is a Reader spanning sources, Aggregate spans Indexables. Sharing a name would suggest a relationship that is not there.",
+      "commit": "06334a4",
+      "branch": "main"
+    },
+    {
+      "at": "2026-10-09T21:28:01.907285136Z",
+      "author": "Jack Roddy/d58bf845",
+      "text": "If this and the parts file shared one list of files, the counting pass would go away because the counts are stamped already.",
       "commit": "06334a4",
       "branch": "main"
     }
