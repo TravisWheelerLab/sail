@@ -2,9 +2,9 @@
   "slug": "sort-and-group-materialize-keys-once",
   "text": "Sorting and grouping combinators compute the key once per record rather than per comparison, because get may be a disk read plus a parse. group_by returns an IndexMap so grouping hits by query reports queries in file order. Every other combinator is eager: walk 0..len() once, build a vector of indices, return View<I> holding the inner collection and that permutation; View is Indexable so combinators chain, and &I is Indexable so one collection can be adapted more than once without being consumed.",
   "created_at": "2026-10-09T21:29:30.952668134Z",
-  "updated_at": "2026-10-09T21:29:30.952668134Z",
+  "updated_at": "2026-10-09T21:42:36.357510014Z",
   "stamp": {
-    "commit": "06334a4",
-    "branch": "main"
+    "commit": "dcaecb1",
+    "branch": "dev"
   }
 }
