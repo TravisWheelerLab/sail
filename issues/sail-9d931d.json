@@ -1,0 +1,28 @@
+{
+  "id": "sail-9d931d",
+  "title": "Does the parts file hold the offsets inline, or point at per-file .saidx files?",
+  "body": "Held inline, one read opens the whole aggregate and one edited part rewrites all of it. Held by reference, each part keeps its own .saidx and the parts file carries paths, stamps and counts alone, so it stays small and a stale part rebuilds by itself, at the cost of N + 1 files and N opens.\n\nBy reference looks right, and the case for inline is the one to make if opening a thousand files turns out to cost more than rebuilding them.\n\nThe type's name follows from the answer: a type that only points at per-file indexes should not be named as if it held offsets.",
+  "type": "decision",
+  "status": "open",
+  "priority": 3,
+  "labels": [],
+  "parent": "sail-31fdd9",
+  "blocked_by": [],
+  "related": [],
+  "assignee": null,
+  "lease_expires": null,
+  "defer_until": null,
+  "created_at": "2026-10-09T21:28:01.78676153Z",
+  "updated_at": "2026-10-09T21:28:01.78676153Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
+  "notes": [],
+  "stamps": {
+    "created": {
+      "commit": "06334a4",
+      "branch": "main"
+    },
+    "closed": null
+  }
+}
