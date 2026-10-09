@@ -5,7 +5,9 @@
   "type": "decision",
   "status": "open",
   "priority": 2,
-  "labels": [],
+  "labels": [
+    "libsail"
+  ],
   "parent": "sail-31fdd9",
   "blocked_by": [],
   "related": [],
@@ -13,7 +15,7 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-09T21:28:01.775915631Z",
-  "updated_at": "2026-10-09T21:28:01.775915631Z",
+  "updated_at": "2026-10-09T21:38:00.349661816Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
