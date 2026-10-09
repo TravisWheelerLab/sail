@@ -2,9 +2,9 @@
   "slug": "publish-from-main-with-a-clean-tree",
   "text": "Publish from main after dev merges in: the tarball's .cargo_vcs_info.json records the commit sha, which must stay reachable, and a dirty package directory stamps dirty: true into it, which must never ship. Untracked files at the workspace root outside every package directory do not make a package dirty.",
   "created_at": "2026-10-09T21:29:55.88241026Z",
-  "updated_at": "2026-10-09T21:29:55.88241026Z",
+  "updated_at": "2026-10-09T21:42:36.277285843Z",
   "stamp": {
-    "commit": "06334a4",
-    "branch": "main"
+    "commit": "dcaecb1",
+    "branch": "dev"
   }
 }
