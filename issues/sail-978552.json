@@ -1,0 +1,28 @@
+{
+  "id": "sail-978552",
+  "title": "What does a stale part of an aggregate index do?",
+  "body": "Today, when is_current says the index beside an input is stale, sail's index_of in input.rs builds a fresh Index in memory and writes nothing to disk. It prints nothing and raises no error. Applying that to an aggregate means one edit to one file can trigger a scan the caller never asked for. Refusing and naming the part is the other reading.",
+  "type": "decision",
+  "status": "open",
+  "priority": 3,
+  "labels": [],
+  "parent": "sail-31fdd9",
+  "blocked_by": [],
+  "related": [],
+  "assignee": null,
+  "lease_expires": null,
+  "defer_until": null,
+  "created_at": "2026-10-09T21:28:01.797562819Z",
+  "updated_at": "2026-10-09T21:28:01.797562819Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
+  "notes": [],
+  "stamps": {
+    "created": {
+      "commit": "06334a4",
+      "branch": "main"
+    },
+    "closed": null
+  }
+}
