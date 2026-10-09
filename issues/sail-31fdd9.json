@@ -1,0 +1,28 @@
+{
+  "id": "sail-31fdd9",
+  "title": "Selection over a stream and over several files, and an index that spans files",
+  "body": "Planned for the release after libsail 0.4.0: two additions that make Selection usable over a stream and over several files, and two changes to what an index is, one to the bytes it occupies and one to how many files it can describe. All four are additive, so none forces a minor on its own.\n\nWhat is awkward now. Selection works over a stream today, but every caller writes the same two loops. This is sail skim's streaming arm with the sail-specific parts removed:\n\n    // pass 1: the count Selection needs, which a Reader cannot answer\n    let mut reader = Reader::new(File::open(path)?, Format::Fasta);\n    let mut n = 0;\n    while reader.advance()? { n += 1; }\n\n    // pass 2: the draw, with the caller keeping its own position\n    let mut drawn = Selection::new(n, m, seed).peekable();\n    let mut reader = Reader::new(File::open(path)?, Format::Fasta);\n    let mut at = 0;\n    while reader.advance()? {\n        if drawn.peek() == Some(&at) { drawn.next(); take(reader.record()); }\n        at += 1;\n    }\n\nThree things are the caller's that need not be: counting, tracking at, and peeking. None of them is the part we deliberately left to the caller, which was deciding how to cross a gap.",
+  "type": "milestone",
+  "status": "open",
+  "priority": 2,
+  "labels": [],
+  "parent": null,
+  "blocked_by": [],
+  "related": [],
+  "assignee": null,
+  "lease_expires": null,
+  "defer_until": null,
+  "created_at": "2026-10-09T21:28:01.711327875Z",
+  "updated_at": "2026-10-09T21:28:01.711327875Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
+  "notes": [],
+  "stamps": {
+    "created": {
+      "commit": "06334a4",
+      "branch": "main"
+    },
+    "closed": null
+  }
+}
