@@ -1,0 +1,10 @@
+{
+  "slug": "framed-bytes-pass-through",
+  "text": "sail's in-memory path writes parsed records through a per-format function pointer (a pointer, not a trait, because the three formats take different extra arguments). The streaming and indexed paths write a record's framed bytes straight through: an operation that only selected a record has nothing to say about its wrapping. --rewrap asks for normalising and matters only for grep, filter, dedup and fetch.",
+  "created_at": "2026-10-09T21:29:55.826541952Z",
+  "updated_at": "2026-10-09T21:29:55.826541952Z",
+  "stamp": {
+    "commit": "06334a4",
+    "branch": "main"
+  }
+}
