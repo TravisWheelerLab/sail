@@ -1,0 +1,30 @@
+{
+  "id": "sail-88cc19",
+  "title": "One Indexed<P, S> generic over the parser, with the three Indexed* types as aliases",
+  "body": "nail is to use libsail to frame and index its sequence and profile databases while parsing each record's bytes into its own types. Reader<R> already hands out raw bytes, and Index, Source and Parse are public, but IndexedFasta, IndexedStockholm and IndexedHmm each hard-wire their parser, so a consumer cannot get an Indexable whose Record is its own type. The three are otherwise copies of one another: they differ in which parser try_get calls and which name_of name_index calls. tbl::IndexedTable<P, S> is already the generic shape, for hit tables.\n\n## Proposal\n\n- `pub struct Indexed<P: Parse, S: Source = FileSource> { source: S, index: Index, parser: PhantomData<fn() -> P> }`.\n- Constructors mirror Reader: `open(path, format)` scans, `detect(path)` sniffs the first bytes, `with_index(path, index)` takes the format from the index, and `unsafe map(path, format)` on the MmapSource impl.\n- `record(n)`, `try_get(n)`, `validate()`, `index()` and `name_index()` as today. name_index dispatches on index.format() through seq::name_of, which Index::build_named already calls.\n- `impl<P, S> Indexable for Indexed<P, S>` with Yield = P::Record.\n- `pub type IndexedFasta<S = FileSource> = Indexed<FastaParser, S>`, and likewise for Stockholm and Hmm. The Mmap* aliases stay. Each alias keeps an inherent `open(path)` and `map(path)` with the old signature so sail's call sites and output bytes do not move.\n- A consumer implements Record and Parse on its own types and builds `Indexed::<SequenceParser, MmapSource>::map(db, Format::Fasta)`.\n\n## Rejected\n\nFraming as a type parameter, `Indexed<P, D: Delimit, S>`, with Index dropping its Format field. The nail side proposed this for a consumer-supplied delimiter, and by its own account nothing in nail uses one. The .saidx header persists the format byte, so Index::write would have to take the format as a parameter, which the api rule forbids. with_index's check of a foreign .saidx against the collection would also go. Reader::new, Index::build and build_named all take Format at runtime, and this keeps Indexed in line with them.\n\n## Out of scope\n\nA consumer-supplied Delimit, and a database whose offsets come from a separate file rather than a scan. Both need a decision on how a .saidx tags a format libsail does not know. See the separate issue.\n\n## Versioning\n\nlibsail minor bump: the three Indexed* types become aliases and lose their own impl blocks. sail's command line and output do not move, and tests/cli.rs is what says so.\n\n## Open\n\n1. Whether the alias constructors keep the scan (open) or the sniff (detect) as the one-argument form. Mirroring Reader by offering both is the current pick.\n2. Where Indexed lives. seq/mod.rs beside name_of is the current pick, since seq's module doc already says the format modules own their Delimit impls and collections.",
+  "type": "decision",
+  "status": "open",
+  "priority": 2,
+  "labels": [
+    "libsail"
+  ],
+  "parent": null,
+  "blocked_by": [],
+  "related": [],
+  "assignee": null,
+  "lease_expires": null,
+  "defer_until": null,
+  "created_at": "2026-10-09T22:24:21.478872468Z",
+  "updated_at": "2026-10-09T22:24:21.478872468Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
+  "notes": [],
+  "stamps": {
+    "created": {
+      "commit": "dcaecb1",
+      "branch": "dev"
+    },
+    "closed": null
+  }
+}
