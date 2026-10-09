@@ -2,9 +2,9 @@
   "slug": "feisty-replaced-rand-in-libsail",
   "text": "libsail depends on indexmap, memchr and feisty, plus memmap2 behind the mmap feature. feisty replaced rand, which was only there to shuffle an index vector and seed the unseeded permute()/sample(), both since removed; feisty has no dependencies where rand pulled seven. sail still takes rand for the one u64 it draws when --seed is absent; std::hash::RandomState would cover that call if the dependency is ever worth dropping.",
   "created_at": "2026-10-09T21:29:31.001451683Z",
-  "updated_at": "2026-10-09T21:29:31.001451683Z",
+  "updated_at": "2026-10-09T21:42:36.220669806Z",
   "stamp": {
-    "commit": "06334a4",
-    "branch": "main"
+    "commit": "dcaecb1",
+    "branch": "dev"
   }
 }
