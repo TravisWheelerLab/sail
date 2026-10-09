@@ -2,9 +2,9 @@
   "slug": "lines-rs-is-not-a-delimit-on-purpose",
   "text": "lines.rs looks like it should be a Delimit impl and deliberately is not: a hit-table row's delimiter is the newline itself, which Delimit rejects (its validity check requires a newline anchor and forbids applying it twice), and skipping comment lines needs a line's first byte, which frame never sees. Hit tables are therefore not a Format variant; Format covers only FASTA, Stockholm and p7hmm.",
   "created_at": "2026-10-09T21:29:30.918764704Z",
-  "updated_at": "2026-10-09T21:29:30.918764704Z",
+  "updated_at": "2026-10-09T21:42:36.261495395Z",
   "stamp": {
-    "commit": "06334a4",
-    "branch": "main"
+    "commit": "dcaecb1",
+    "branch": "dev"
   }
 }
