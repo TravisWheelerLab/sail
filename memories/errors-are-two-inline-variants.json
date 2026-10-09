@@ -2,9 +2,9 @@
   "slug": "errors-are-two-inline-variants",
   "text": "libsail's Error has two variants, Parse { detail } and Io { source }, held inline rather than boxed, since no Result sits on a per-line path. ErrorKind is #[non_exhaustive]. bail_parse! returns a parse error, and position is formatted into the message at the call site rather than carried in structured fields.",
   "created_at": "2026-10-09T21:29:30.992739847Z",
-  "updated_at": "2026-10-09T21:29:30.992739847Z",
+  "updated_at": "2026-10-09T21:42:36.212458539Z",
   "stamp": {
-    "commit": "06334a4",
-    "branch": "main"
+    "commit": "dcaecb1",
+    "branch": "dev"
   }
 }
