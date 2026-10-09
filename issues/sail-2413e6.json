@@ -5,7 +5,9 @@
   "type": "feature",
   "status": "open",
   "priority": 3,
-  "labels": [],
+  "labels": [
+    "sail"
+  ],
   "parent": "sail-31fdd9",
   "blocked_by": [
     "sail-a59d6f"
@@ -15,7 +17,7 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-09T21:28:01.76535608Z",
-  "updated_at": "2026-10-09T21:28:01.867433275Z",
+  "updated_at": "2026-10-09T21:38:00.361714669Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
