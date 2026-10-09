@@ -4,7 +4,3 @@
 **/*.rs.bk
 
 tmp-claude/
-
-# working notes, not provenance
-API-CHANGES.md
-CLI-CHANGES.md

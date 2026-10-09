@@ -5,6 +5,9 @@ homology search and addresses the records inside them; `sail` is the
 command-line tool over it. `fixtures/` at the workspace root holds a small file
 for each format, shared by both crates' tests.
 
+Design rationale that the code does not state lives in foam's memories, and
+pending work lives in foam's issues. `foam prime` prints both at session start.
+
 ## the boundary between the crates
 
 **The CLI never builds its own offset, index, or record data structures.** Those
@@ -13,8 +16,11 @@ already offers and to expose that choice as flags.
 
 When the CLI needs something `libsail` lacks, the answer is to add it to
 `libsail`, even when the CLI-side version would be shorter. Before changing
-`libsail`'s public API, write the proposed change up in `API-CHANGES.md` and
-wait for review rather than editing on the assumption it will be accepted.
+`libsail`'s public API, write the proposal up as a foam issue, a `decision`
+where a choice is open, and wait for review rather than editing on the
+assumption it will be accepted. The same goes for a change to `sail`'s command
+line. Every issue carries the label of the crate it changes, `libsail` or
+`sail`, and a milestone that spans both carries both.
 
 The rule concerns state proportional to the *input*. It is not a rule about
 memory in general. The CLI may hold what it is about to write or what the caller
@@ -22,218 +28,25 @@ asked for: a set of requested names, a ring buffer sized by `-n`, a vector sized
 by the largest position requested. It may not hold a structure that grows with
 the file, and it may not hold a byte offset.
 
-## libsail
+## api design
 
-Organised by concern rather than by format. A format module owns its record
-type, its `Delimit` impl and its `Parse` impl; everything downstream sees only
-the shared traits.
+**No parameter the library could derive itself.** When a value has exactly one
+correct source and passing the wrong one fails silently, the library computes
+it. `Index::write(path, data)` stats the data file; it does not take a stamp.
+Prefer the signature that cannot be called wrongly over the one that documents
+how to call it rightly, and treat a correctness argument for the riskier shape
+as a reason to find a third design.
 
-| module | owns |
-| --- | --- |
-| `collection.rs` | `Indexable`/`Iterable`, the `View`/`Drawn`/`Iter`/`Aggregate` adapters, every combinator |
-| `error.rs` | `Error`, `ErrorKind`, `bail_parse!` |
-| `format.rs` | `Format` and `detect`/`detect_path` |
-| `index.rs` | `Delimit`, `scan`/`frame`/`Offset`, `Index` and the `.saidx` file, the streaming `Reader` |
-| `lines.rs` | row framing for hit tables |
-| `parse.rs` | the `Parse` trait |
-| `pread.rs` | positioned reads, private |
-| `select.rs` | `Selection`, which records a sequential sample keeps |
-| `seq/` | FASTA, Stockholm, HMMER3 p7hmm |
-| `source.rs` | `Source`, `FileSource`, `MmapSource` |
-| `tbl/` | `Hit`, `HitColumns`, `WriteRow`, `Table`/`IndexedTable`, and the BLAST, HMMER and nail layouts |
+**Rejected machinery comes out whole.** When something is judged not worth its
+cost, remove it rather than keep it in a cheaper form. Raise a concern only if
+removing it breaks something the task needs.
 
-`Format` covers only the three sequence formats. Hit tables are framed by
-`lines.rs` and parsed through `tbl/`, and are not a `Format` variant.
+## vocabulary
 
-### the core abstractions
-
-`Source` is bytes addressable at an offset, with no cursor: `range(&self, start,
-len) -> Cow<[u8]>`. It takes `&self` because `Indexable::get` does, so a
-`Read`/`Seek` bound would put a `RefCell` or a `Mutex` behind every disk-backed
-collection. It returns `Cow` so a mapped source can borrow and copy nothing,
-which is most of what it exists for. `FileSource` pays a syscall and an
-allocation per range; `MmapSource` is behind the `mmap` feature.
-
-`Delimit` is how a format marks a record boundary. An impl supplies `DELIM` and
-`DELIM_TYPE`; `WIDTH`, `CARRY` and a const-evaluated validity check are derived,
-so an impl can neither forget the newline anchor nor apply it twice. `scan`
-finds every anchored delimiter across chunked reads, carrying `CARRY` bytes over
-each chunk boundary so a split delimiter is never lost or doubled. `frame` turns
-those positions into `Offset { start, n_bytes }`, and `build_index` composes the
-two.
-
-`lines.rs` looks like it should be a `Delimit` impl and deliberately is not: a
-row's delimiter is the newline itself, which `Delimit` rejects, and skipping
-comment lines needs a line's first byte, which `frame` never sees.
-
-`Parse` takes the bytes of one framed record and returns a record. It has no
-receiver, for the same reason `Source::range` takes `&self`.
-
-`Indexable` is the one trait an implementor writes: `len` and `get(n) ->
-Option<Yield<'_>>`. `Yield<'a>: Borrow<Record>` is the load-bearing piece, and
-the part newcomers misread. It has nothing to do with mutability. It is what
-lets an in-memory collection lend `&Record` while a disk-backed one yields an
-owned `Record` freshly parsed, through one API. Every combinator is agnostic to
-which.
-
-`Indexable` carries a hard invariant: `get(i)` is `Some` for every `i < len()`.
-Breaking it panics rather than returning an error, because an implementor that
-lies is a bug and not a runtime condition to recover from.
-
-`Iterable` is blanket-implemented over every `Indexable`. Nobody writes one by
-hand.
-
-### the three ways to read a file
-
-- **In memory** (`Fasta`, `Stockholm`, `Hmm`) reads the file whole, frames it,
-  and parses every record up front. Cheapest per access, most expensive in
-  memory: the bytes and the parsed records are both resident.
-- **Indexed** (`IndexedFasta<S>` and siblings, generic over `Source`) builds the
-  offset table in one pass and parses nothing. `get(n)` reads and parses on
-  every call. Memory is the offset table alone, and it supports random access.
-  The `Mmap*` aliases are the same types with `S = MmapSource`.
-- **Streaming** (`index::Reader<R>`) keeps no offset table at all, advancing one
-  record at a time through a reused buffer. Memory is proportional to the
-  largest record rather than to the file. Forward-only, one pass.
-
-The indexed types are `cfg(any(unix, windows))`, and the `Mmap*` ones are
-further behind the `mmap` feature.
-
-### `Index` and the `.saidx` file
-
-`Index` holds a format, a vector of offsets, and an optional names layer: a blob
-of concatenated name bytes, a span per record, and a sorted permutation for
-lookup by name. An absent name stays distinct from an empty one, which Stockholm
-without `#=GF ID` needs.
-
-On disk: magic `SLIX`, a version byte, a format byte, the source file's length
-and mtime, the record count, a names flag, then the offsets and the names layer,
-all little-endian. No length read from the file is allocated against until the
-bytes back it, and a truncated file is always an error rather than a panic.
-
-`save` stamps the source's length and mtime and writes through a temporary file
-and a rename; `load` re-stats the source and refuses an index file that disagrees.
-This catches ordinary edits, not all of them: a same-size change within one
-mtime tick goes undetected, which is a known gap rather than an oversight.
-`path_for` appends `.saidx` rather than substituting, so `.fa` and `.sto`
-siblings do not collide.
-
-`build` scans; `build_named` scans and names in the same pass, reading each name
-out of the reader's own buffer instead of going back to the file.
-
-### combinators
-
-Every combinator is a default method on `Indexable`, and most are eager: one
-walks `0..len()` once, builds a vector of indices, and returns a `View<I>`
-holding the inner collection and that permutation. `View` is itself `Indexable`,
-so combinators chain. `&I` is `Indexable` too, which is what lets one collection
-be adapted more than once without being consumed or reopened.
-
-`permute` and `sample` are the exception. Both return `Drawn<I>`, which holds a
-`feisty::Permutation` over `0..len()` and a count of how many of its positions to
-keep, so neither allocates a vector. `permute(seed)` keeps every position and
-`sample(m, seed)` keeps the first `m`, so two draws from one collection under one
-seed nest: the smaller is a subset of the larger. Both take a `u64` rather than
-an `Rng`, so a draw reproduces from its recorded seed alone rather than from
-every prior use of a generator. The reads are no less scattered for it — `Drawn`
-hands positions back in the permutation's order — so this buys allocation, not
-locality.
-
-`sample_in_order` is the third shape: an iterator rather than a collection.
-Method D is sequential state and cannot answer `get(7)` without having run the
-first seven decisions, so anything `Indexable` would have to store the indices —
-which is the 8m bytes the method exists to avoid. `select.rs` holds the
-arithmetic with no I/O in it, so a caller driving `index::Reader` can use the
-same selection and decide for itself whether to scan a gap or seek it.
-
-Sorting and grouping materialize the key once per record rather than per
-comparison, because `get` may be a disk read and a parse. `group_by` returns an
-`IndexMap` so grouping hits by query reports queries in file order.
-
-`Aggregate<I>` addresses several collections of the same type as one range,
-dispatching through a binary search over per-part starts, one `usize` per part
-rather than one per record. It nests, and `locate` recovers which part a record
-came from.
-
-### errors
-
-Two variants, `Parse { detail }` and `Io { source }`, held inline rather than
-boxed, since no `Result` here sits on a per-line path. `ErrorKind` is
-`#[non_exhaustive]`. `bail_parse!` is the sugar for returning a parse error, and
-position is formatted into the message at the call site rather than carried in
-structured fields.
-
-## sail
-
-`main.rs` parses and runs. `cli.rs` holds the clap tree, the dispatch match over
-all twenty subcommands, and the shared argument enums. `input.rs` locates,
-identifies and opens inputs, and decides the backend. `output.rs` opens the
-writer and writes records. `commands/` is one module per subcommand.
-
-There is no command trait. Each module exports a clap `Args` struct with `pub fn
-run(self) -> Result<()>`, and `cli.rs` calls it. Inside `run` the shape is: plan
-the inputs, open a writer, then match on the settled backend, with the
-`dispatch!` and `indexed!` macros in `input.rs` selecting the per-format libsail
-type inside each arm.
-
-### choosing a backend
-
-Three things meet in `resolve()`, in `input.rs`:
-
-- **`Mode`** is what the caller asked for: `auto`, `stream`, `memory`,
-  `indexed`. `auto` is the only one that is not a backend, and `resolve` turns
-  it into one.
-- **`Needs`** is what the operation requires of its input: `Pass` for one
-  forward scan, `Count` when the total must be known first, `Sweep` when the
-  total must be known first and the records are then read in order, `Sparse` for
-  a few records by position, `Whole` when every record is needed in an order the
-  file does not hold.
-- **The input itself**, since a pipe has no byte offsets.
-
-`resolve` is one table rather than logic spread across twenty `run` methods,
-so "fastest by default" is a claim a reader can check in one place.
-
-An explicit `--read` is an assertion and never falls back. `--read indexed` on a
-pipe is an error, not a downgrade, because downgrading to memory would do the
-one thing the caller was avoiding and downgrading to streaming would report a
-number for a backend that never ran. `--format` behaves the same way: it
-asserts, and fails when the bytes disagree.
-
-`Sweep` streams where `Count` indexes, and the difference is what happens after
-the count: `tail` goes on to address the last records out of order, so it wants
-an offset table, and `skim` reads forward from there, so an offset table would
-cost 16 bytes a record to spare a pass it can just take. An index file beside
-the input removes that pass anyway — `index::count_in` reads the count out of a
-35-byte header — which is what makes `sail index` worth running first.
-
-Four commands take no `--read` because they need every record at once: `sort`,
-`shuffle`, `sample`, `rename`. Three more take none for structural reasons:
-`split` reindexes the whole collection, `validate` needs the disk-backed type to
-name the record that failed, and `index` writes byte offsets and so refuses
-stdin outright.
-
-### input and output
-
-The format is read from the first 64 bytes, since every format's magic is on the
-first line. Stdin is refused at a terminal, so a bare `sail count` does not
-hang, and is otherwise read whole, because a pipe cannot be reopened. That is
-the only reason. Every other input is identified with a short read and handed on
-unopened, so nothing is buffered twice.
-
-`FormatArg` mirrors libsail's `Format` as a separate clap-facing type so that
-libsail need not depend on clap. The `From` impl is the whole of the mapping.
-
-Records reach the writer one of two ways. The in-memory path writes parsed
-records through a per-format function pointer, which is a pointer rather than a
-trait because the three formats take different extra arguments. The streaming
-and indexed paths write a record's framed bytes straight through, on the grounds
-that an operation which only selected a record has nothing to say about how it
-was wrapped; `--rewrap` asks for the normalising behaviour instead, and matters
-only for `grep`, `filter`, `dedup` and `fetch`.
-
-Nothing is written through `Display`. A `Formatter` takes `&str` and a record
-name need not be UTF-8, and a `Display` impl that fails panics out of `write!`
-rather than returning an error.
+The word "sidecar" is banned from this project: source, comments, tests,
+markdown, commit messages and conversation alike. The thing it used to name is
+the `.saidx` file that `Index::write` puts beside a data file. Call it the index
+file, or name the extension.
 
 ## conventions
 
@@ -246,10 +59,10 @@ is no comment.
 
 **Tests.** `libsail` keeps every test inline in the file it covers; `sail` also
 has `tests/cli.rs`, which drives the real binary so that argv parsing, exit
-codes and stderr are pinned alongside the output. Roughly a hundred golden files
-live under `sail/tests/golden/`, regenerated with `SAIL_BLESS=1`. Every backend
-of an operation must write identical bytes: a streaming or indexed path that
-disagrees with the in-memory one is invisible to any single-backend test.
+codes and stderr are pinned alongside the output. The golden files under
+`sail/tests/golden/` are regenerated with `SAIL_BLESS=1`. Every backend of an
+operation must write identical bytes: a streaming or indexed path that disagrees
+with the in-memory one is invisible to any single-backend test.
 
 Test names are full sentences describing the property, not `test_foo`. For
 instance `a_delimiter_mid_line_is_not_a_record_boundary`,
@@ -265,6 +78,13 @@ workspace root.
 only when a release is being cut, so it holds nothing unpublished. Do not branch
 off `dev` unless asked to.
 
+**Releases.** Jack says when a release is, never Claude. Until he does, versions
+in `Cargo.toml` stay where they are and changelog entries accumulate under
+`## [Unreleased]` with `### Added` / `### Changed` / `### Removed` headings and
+no date. The version heading, the date, the `Cargo.toml` bumps and the compare
+link at the foot of the changelog are all part of the release commit. Release
+tags are annotated and named `<crate>-v<version>`.
+
 **Versions.** Each crate is versioned by what changed in it, and the two are
 never aligned for tidiness. A break in `libsail` moves `libsail`'s minor, under
 cargo's rule that 0.x's minor is the breaking axis, and moves nothing in `sail`
@@ -272,38 +92,13 @@ unless `sail`'s own interface changed. For the CLI that interface is the command
 line and what each subcommand writes, not the library underneath, and
 `sail/tests/cli.rs` is what says whether it moved.
 
-**Dependencies.** `libsail` takes `indexmap`, `memchr` and `feisty`, plus
-`memmap2` behind the `mmap` feature. `feisty` replaced `rand`, which was there
-only to shuffle a vector of indices and to seed the unseeded `permute()` and
-`sample()`, both now removed; it has no dependencies of its own where `rand`
-pulled seven. `sail` still takes `rand`, for the one `u64` it draws when
-`--seed` is absent. `std::hash::RandomState` would cover that call if the
-dependency is ever worth dropping.
-
-**Working notes.** `API-CHANGES.md` and `CLI-CHANGES.md` are scratch. They hold
-proposals being thought through, they are not tracked, and they are never
-committed. Provenance lives in commit messages and in the code, so a proposal
-here can be rewritten or thrown away without ceremony.
-
 **Benchmarks.** `benchmarks/` is a separate cargo project rather than a
 workspace member. Its `setup.sh` fetches pinned builds of seqkit and the Easel
 miniapps into `benchmarks/tools`, and nothing is installed outside that
 directory: no package manager, no `~/.local/bin`, no PATH edits. The versions
-are pinned because they are part of the measurement: a number is comparable
-only against another taken with the same peer.
-
-Every measured run reads from the disk. The driver drops the fixture's pages
-before each one, because a machine with room to hold a gigabyte will hold it,
-and without eviction the suite measures memcpy out of the page cache: a cold
-`cat` of the fixture takes 0.273s where a warm one takes 0.008s. `--warm` asks
-for the old behaviour, and the board's header records which it was, since the
-two are not comparable. What used to be the warmup step is a dry run now — it
-loads the binaries and surfaces a bad invocation before anything is timed, and
-it no longer has anything to do with the page cache.
-
-A benchmark that builds an index before reading has to evict again on its own.
-`bin/order.rs` does, after its index and before its first read, because
-`IndexedFasta::open` scans the whole file and puts every page straight back.
+are pinned because they are part of the measurement. Every measured run reads
+from disk; `--warm` keeps the page cache, and the board's header says which it
+was, since the two are not comparable.
 
 ## checks
 
