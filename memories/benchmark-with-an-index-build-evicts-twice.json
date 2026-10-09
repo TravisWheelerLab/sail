@@ -2,9 +2,9 @@
   "slug": "benchmark-with-an-index-build-evicts-twice",
   "text": "A benchmark that builds an index before reading must evict the page cache again on its own, after the build and before its first read: bin/order.rs does, because IndexedFasta::open scans the whole file and puts every page straight back.",
   "created_at": "2026-10-09T21:29:55.850337947Z",
-  "updated_at": "2026-10-09T21:29:55.850337947Z",
+  "updated_at": "2026-10-09T21:42:36.163112039Z",
   "stamp": {
-    "commit": "06334a4",
-    "branch": "main"
+    "commit": "dcaecb1",
+    "branch": "dev"
   }
 }
