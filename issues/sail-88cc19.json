@@ -21,6 +21,7 @@
   "resolution": null,
   "notes": [
     {
+      "id": "47e8f32f",
       "at": "2026-10-09T23:04:01.442690786Z",
       "author": "Jack Roddy/c45d6630",
       "text": "Jack approved the concrete design on 2026-10-09 after the generic Indexed<P, S> shape was costed against the concrete-first counting rules and rejected. Not yet claimed; implementation waits on his go.",

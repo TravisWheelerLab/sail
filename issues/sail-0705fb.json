@@ -24,6 +24,7 @@
   "resolution": null,
   "notes": [
     {
+      "id": "138f16ef",
       "at": "2026-10-09T21:28:01.899405285Z",
       "author": "Jack Roddy/d58bf845",
       "text": "Aggregate<I> is not involved: this is a Reader spanning sources, Aggregate spans Indexables. Sharing a name would suggest a relationship that is not there.",
@@ -31,6 +32,7 @@
       "branch": "main"
     },
     {
+      "id": "cd043495",
       "at": "2026-10-09T21:28:01.907285136Z",
       "author": "Jack Roddy/d58bf845",
       "text": "If this and the parts file shared one list of files, the counting pass would go away because the counts are stamped already.",

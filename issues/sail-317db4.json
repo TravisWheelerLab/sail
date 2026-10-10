@@ -21,6 +21,7 @@
   "resolution": null,
   "notes": [
     {
+      "id": "c1a4e7c7",
       "at": "2026-10-09T21:28:01.875562764Z",
       "author": "Jack Roddy/d58bf845",
       "text": "count as a free fn reads as 'count this source'; as a constructor-and-method it invites counting and then reusing a consumed reader. Leaning free fn.",
@@ -28,6 +29,7 @@
       "branch": "main"
     },
     {
+      "id": "c0073356",
       "at": "2026-10-09T21:28:01.883466584Z",
       "author": "Jack Roddy/d58bf845",
       "text": "Both names are nearly taken: index::count_in(path) reads a count out of an index file's header, and Index::position(name) looks a record up by name. A free index::count beside count_in, and Reader::position beside Index::position, differ in what they answer and not in what they are called.",
@@ -35,6 +37,7 @@
       "branch": "main"
     },
     {
+      "id": "307c6a91",
       "at": "2026-10-09T21:28:01.891545344Z",
       "author": "Jack Roddy/d58bf845",
       "text": "advance_to asked to go backwards panics: the caller broke the contract, same argument as Indexable::get's invariant.",
