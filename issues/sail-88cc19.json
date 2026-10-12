@@ -3,7 +3,7 @@
   "title": "A concrete source-plus-index type that the three Indexed* collections, and nail, wrap",
   "body": "nail is to use libsail to frame and index its sequence and profile databases while parsing each record's bytes into its own types. Reader<R> already hands out raw bytes, and Index, Source and Parse are public, but the pair of a Source and an Index exists only inside IndexedFasta, IndexedStockholm and IndexedHmm, each of which carries its own copy and is reachable only through a type named for a parser. The three copies differ in which parser try_get calls and which name_of name_index calls, and in nothing else.\n\n## Decision\n\nGive the source-plus-index pair its own concrete type, and have the three format collections wrap it instead of each carrying a copy. nail wraps the same type with its own parser, so it is not a special case: libsail's own formats are the worked example.\n\n- A struct in index.rs beside Reader, holding `source: S` and `index: Index`, generic over Source as the Indexed* types already are and over nothing else. Working name `Framed<S>`; the name is open.\n- Constructors mirror Reader: `open(path, format)` scans, `detect(path)` sniffs the first bytes, `with_index(path, index)` takes the format from the index, and `unsafe map(path, format)` on the MmapSource impl.\n- Methods: `format()`, `index()`, `len()`, `name_index()` dispatching on the index's format through seq::name_of, and `record(n) -> Result<Option<Cow<[u8]>>>`. All exist today on each Indexed* type; none is new.\n- IndexedFasta<S> becomes a newtype over Framed<S> that keeps its current constructors, forwards index, name_index and record, and adds try_get, validate and Indexable. Its with_index keeps the format check, since this is the type that promises FASTA. Stockholm and Hmm likewise. sail's call sites and output bytes do not move.\n- nail: `struct Fasta(Framed<MmapSource>)` built with `Framed::map(db, Format::Fasta)`, name lookup through index().position, get through record(n) and its own parse. Profiles the same over Format::Hmm. Streaming stays on Reader.\n\n## Rejected\n\n1. `Indexed<P: Parse, S: Source>` with the three types as aliases. It collapses the same copies, but P has three instantiations inside libsail, below the threshold for a type parameter, and no generic consumer: Indexable is what the combinators bind, and each wrapper implements it directly. The aliases needed their own impl blocks for the old one-argument constructors anyway, and name_index dispatched on the runtime Format regardless, so P bought try_get and nothing else, at the cost of a parameter and a PhantomData in every signature nail sees.\n2. Framing as a type parameter, `Indexed<P, D: Delimit, S>`, with Index dropping its Format field. Proposed from the nail side for a consumer-supplied delimiter, which by its own account nothing in nail uses. The .saidx header persists the format byte, so Index::write would have to take the format as a parameter, which the api rule forbids, and with_index's check of a foreign .saidx against the collection would go.\n3. libsail owning nail's Sequence and Profile. Those encodings belong to nail's DP kernels. libsail knows where a record is; nail knows what it means.\n\n## Out of scope\n\nA consumer-supplied Delimit, and a database whose offsets come from a separate file rather than a scan: sail-f85dea. Under this design that is a constructor on the concrete type rather than a new parser.\n\n## Versioning\n\nlibsail minor bump: the three Indexed* types change from structs with fields to newtypes, and a new public type appears. sail's command line and output do not move, and tests/cli.rs is what says so.\n\n## Open\n\n1. The name of the concrete type.\n2. Index::build walks a Reader where IndexedFasta::open today calls build_index::<_, FastaDelimiter>, the chunked scan. Same offsets either way; whether they cost the same is a benchmark question, and a format-keyed build_index is a short dispatcher if not.",
   "type": "decision",
-  "status": "in_progress",
+  "status": "closed",
   "priority": 2,
   "labels": [
     "libsail"
@@ -12,13 +12,13 @@
   "blocked_by": [],
   "related": [],
   "assignee": "Jack Roddy/c45d6630",
-  "lease_expires": "2026-10-12T18:13:13.72313237Z",
+  "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-09T22:24:21.478872468Z",
-  "updated_at": "2026-10-12T18:01:56.110697417Z",
-  "closed_at": null,
-  "close_reason": null,
-  "resolution": null,
+  "updated_at": "2026-10-12T18:06:01.488935391Z",
+  "closed_at": "2026-10-12T18:06:01.488935391Z",
+  "close_reason": "Framed<S> landed on dev with the three collections as newtypes over it; see the commit after dcaecb1",
+  "resolution": "done",
   "notes": [
     {
       "id": "47e8f32f",
@@ -42,6 +42,9 @@
       "commit": "dcaecb1",
       "branch": "dev"
     },
-    "closed": null
+    "closed": {
+      "commit": "ab97b44",
+      "branch": "dev"
+    }
   }
 }
