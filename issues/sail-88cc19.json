@@ -15,7 +15,7 @@
   "lease_expires": "2026-10-12T18:13:13.72313237Z",
   "defer_until": null,
   "created_at": "2026-10-09T22:24:21.478872468Z",
-  "updated_at": "2026-10-12T17:58:13.72313237Z",
+  "updated_at": "2026-10-12T18:01:56.110697417Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
@@ -25,6 +25,14 @@
       "at": "2026-10-09T23:04:01.442690786Z",
       "author": "Jack Roddy/c45d6630",
       "text": "Jack approved the concrete design on 2026-10-09 after the generic Indexed<P, S> shape was costed against the concrete-first counting rules and rejected. Not yet claimed; implementation waits on his go.",
+      "commit": "dcaecb1",
+      "branch": "dev"
+    },
+    {
+      "id": "cb5a7305",
+      "at": "2026-10-12T18:01:56.110696727Z",
+      "author": "Jack Roddy/c45d6630",
+      "text": "Built as Framed<S> in index.rs, with a private format-keyed build_for beside delim_of so open(path, format) takes the same chunked scan the collections took before; Index::build through Reader was left alone, so the open point about their relative cost is moot for this change. The three collections are newtypes with every public signature kept. Not a breaking change after all: the fields were private, so nothing outside the crate could see the struct become a tuple. Six tests cover Framed against Reader, detect, with_index, build_named, IndexedFasta and the map.",
       "commit": "dcaecb1",
       "branch": "dev"
     }
