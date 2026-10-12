@@ -9,6 +9,21 @@ cargo's reading of it below 1.0: the **minor** is the breaking axis, so 0.2 to
 
 ## [Unreleased]
 
+### Added
+
+- `index::Framed<S>`, a file and the offset of every record in it, with no
+  parser attached. `open(path, format)` scans, `detect(path)` reads the format
+  from the first bytes, `with_index(path, index)` takes it from the index, and
+  `map(path, format)` maps the file instead of reading it. `record(n)` hands
+  back one record's framed bytes and `name_index` names them, so a caller with
+  a parser of its own reads a file the way the disk-backed collections do.
+
+### Changed
+
+- `IndexedFasta`, `IndexedStockholm` and `IndexedHmm` each hold a `Framed<S>`
+  and forward `index`, `name_index` and `record` to it, where each used to
+  carry its own copy of the source and the index. No signature moved.
+
 ## [0.4.0] - 2026-09-16
 
 `permute` and `sample` compute their permutation from a seed instead of storing

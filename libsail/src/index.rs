@@ -19,6 +19,10 @@ use memchr::memmem;
 
 use crate::error::{Error, Result, bail_parse};
 use crate::format::Format;
+#[cfg(feature = "mmap")]
+use crate::source::MmapSource;
+#[cfg(any(unix, windows))]
+use crate::source::{FileSource, Source};
 
 /// Where one record sits in the bytes it was indexed from.
 #[derive(Default, Clone, Copy, Debug, PartialEq)]
@@ -1784,6 +1788,19 @@ fn delim_of(format: Format) -> (&'static [u8], Delimiter) {
     }
 }
 
+/// Index every record in `bytes` as `format`.
+fn build_for<R: Read>(bytes: R, format: Format) -> Result<Vec<Offset>> {
+    use crate::seq::fasta::FastaDelimiter;
+    use crate::seq::p7hmm::HmmDelimiter;
+    use crate::seq::stockholm::StockholmDelimiter;
+
+    match format {
+        Format::Fasta => build_index::<_, FastaDelimiter>(bytes),
+        Format::Stockholm => build_index::<_, StockholmDelimiter>(bytes),
+        Format::Hmm => build_index::<_, HmmDelimiter>(bytes),
+    }
+}
+
 /// One record's bytes at a time, framed out of a stream.
 ///
 /// Unlike [`build_index`], nothing is kept per record: a pass over a file
@@ -2270,5 +2287,243 @@ mod build_tests {
 
         std::fs::remove_file(&path).ok();
         std::fs::remove_file(path_for(&path)).ok();
+    }
+}
+
+// ---
+
+/// A file and where each of its records sits in it, with no parser attached.
+/// The disk-backed collections each hold one and add their parser; a caller
+/// with a parser of its own holds one directly and reads [`record`](Self::record).
+#[cfg(any(unix, windows))]
+pub struct Framed<S: Source = FileSource> {
+    source: S,
+    index: Index,
+}
+
+#[cfg(any(unix, windows))]
+impl Framed<FileSource> {
+    /// Index the file at `path` as `format`, parsing none of it.
+    pub fn open(path: impl AsRef<Path>, format: Format) -> Result<Self> {
+        let source = FileSource::open(path)?;
+        let offsets = build_for(source.file(), format)?;
+
+        Ok(Framed {
+            source,
+            index: Index::new(format, offsets),
+        })
+    }
+
+    /// Index the file at `path` as whatever format it opens with.
+    pub fn detect(path: impl AsRef<Path>) -> Result<Self> {
+        let format = crate::format::detect_path(&path)?;
+
+        Self::open(path, format)
+    }
+
+    /// Address the file at `path` with `index` instead of scanning for it.
+    /// Nothing here checks that the index describes this file; [`is_current`]
+    /// does.
+    pub fn with_index(path: impl AsRef<Path>, index: Index) -> Result<Self> {
+        let source = FileSource::open(path)?;
+
+        Ok(Framed { source, index })
+    }
+}
+
+#[cfg(feature = "mmap")]
+impl Framed<MmapSource> {
+    /// Map the file at `path` and index it as `format`, parsing none of it.
+    ///
+    /// # Safety
+    ///
+    /// The file must not be modified or truncated while the value is alive;
+    /// see [`MmapSource::open`].
+    pub unsafe fn map(path: impl AsRef<Path>, format: Format) -> Result<Self> {
+        // SAFETY: the caller has promised, through this
+        //         function's own contract, not to modify
+        //         or truncate the file while the value is
+        //         alive
+        let source = unsafe { MmapSource::open(path)? };
+        let offsets = build_for(source.bytes(), format)?;
+
+        Ok(Framed {
+            source,
+            index: Index::new(format, offsets),
+        })
+    }
+}
+
+#[cfg(any(unix, windows))]
+impl<S: Source> Framed<S> {
+    /// The format the records were framed as.
+    pub fn format(&self) -> Format {
+        self.index.format()
+    }
+
+    /// Where each record sits, and what each is called once
+    /// [`name_index`](Self::name_index) has run.
+    pub fn index(&self) -> &Index {
+        &self.index
+    }
+
+    /// The number of records framed.
+    pub fn len(&self) -> usize {
+        self.index.len()
+    }
+
+    /// Whether no record was framed.
+    pub fn is_empty(&self) -> bool {
+        self.index.is_empty()
+    }
+
+    /// Name every record, by a byte scan of the range the index frames rather
+    /// than a parse of it.
+    pub fn name_index(&mut self) -> Result<()> {
+        // the fields are borrowed apart because name_with
+        // takes &mut self.index while the scan reads
+        // self.source
+        let source = &self.source;
+        let format = self.index.format();
+
+        self.index.name_with(|o| {
+            let bytes = source.range(o.start, o.n_bytes)?;
+
+            Ok(crate::seq::name_of(format, &bytes).map(|name| Cow::Owned(name.to_vec())))
+        })
+    }
+
+    /// The `n`th record's framed bytes, or `None` past the end.
+    ///
+    /// Borrowed from a mapped source and owned from a read one, exactly as
+    /// [`Source::range`] hands them over.
+    pub fn record(&self, n: usize) -> Result<Option<Cow<'_, [u8]>>> {
+        let Some(o) = self.index.offset(n)? else {
+            return Ok(None);
+        };
+
+        Ok(Some(self.source.range(o.start, o.n_bytes)?))
+    }
+}
+
+#[cfg(all(test, any(unix, windows)))]
+mod framed_tests {
+    use super::*;
+    use crate::collection::Indexable;
+    use crate::fixture;
+    use crate::seq::fasta::IndexedFasta;
+
+    const FIXTURES: [(&str, Format); 3] = [
+        (fixture!("proteins.fa"), Format::Fasta),
+        (fixture!("families.sto"), Format::Stockholm),
+        (fixture!("models.hmm"), Format::Hmm),
+    ];
+
+    #[test]
+    fn a_framed_file_hands_back_the_bytes_the_reader_streams() {
+        for (path, format) in FIXTURES {
+            let framed = Framed::open(path, format).unwrap();
+            let mut reader = Reader::new(File::open(path).unwrap(), format);
+
+            let mut n = 0;
+            while reader.advance().unwrap() {
+                let bytes = framed.record(n).unwrap().unwrap();
+                assert_eq!(bytes.as_ref(), reader.record(), "{path} record {n}");
+                assert_eq!(
+                    framed.index().offset(n).unwrap().unwrap(),
+                    reader.offset(),
+                    "{path} record {n}"
+                );
+                n += 1;
+            }
+
+            assert_eq!(n, framed.len(), "{path}");
+            assert!(framed.record(n).unwrap().is_none(), "{path}: past the end");
+        }
+    }
+
+    #[test]
+    fn detect_frames_each_fixture_as_its_own_format() {
+        for (path, format) in FIXTURES {
+            let detected = Framed::detect(path).unwrap();
+            let told = Framed::open(path, format).unwrap();
+
+            assert_eq!(detected.format(), format, "{path}");
+            assert_eq!(detected.index().offsets(), told.index().offsets(), "{path}");
+        }
+    }
+
+    #[test]
+    fn an_index_handed_over_sets_the_format_and_the_offsets() {
+        for (path, format) in FIXTURES {
+            let scanned = Framed::open(path, format).unwrap();
+            let built = Index::build(File::open(path).unwrap(), format).unwrap();
+            let handed = Framed::with_index(path, built).unwrap();
+
+            assert_eq!(handed.format(), format, "{path}");
+            assert_eq!(
+                handed.index().offsets(),
+                scanned.index().offsets(),
+                "{path}"
+            );
+        }
+    }
+
+    #[test]
+    fn naming_a_framed_file_agrees_with_a_named_build_on_every_format() {
+        // name_index reads each record back through the
+        // source; build_named names out of the framing
+        // buffer. one name per record either way
+        for (path, format) in FIXTURES {
+            let mut framed = Framed::open(path, format).unwrap();
+            framed.name_index().unwrap();
+
+            let built = Index::build_named(File::open(path).unwrap(), format).unwrap();
+
+            assert_eq!(framed.len(), built.len(), "{path}");
+            for n in 0..built.len() {
+                assert_eq!(
+                    framed.index().name(n).unwrap(),
+                    built.name(n).unwrap(),
+                    "{path} record {n}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn the_fasta_collection_is_a_framed_file_with_a_parser_added() {
+        let path = fixture!("proteins.fa");
+        let framed = Framed::open(path, Format::Fasta).unwrap();
+        let fasta = IndexedFasta::open(path).unwrap();
+
+        assert_eq!(framed.len(), fasta.len());
+        for n in 0..fasta.len() {
+            assert_eq!(
+                framed.record(n).unwrap(),
+                fasta.record(n).unwrap(),
+                "record {n}"
+            );
+        }
+    }
+
+    #[cfg(feature = "mmap")]
+    #[test]
+    fn a_mapped_file_frames_the_same_bytes_as_a_read_one() {
+        for (path, format) in FIXTURES {
+            let read = Framed::open(path, format).unwrap();
+            let mapped = unsafe { Framed::map(path, format) }.unwrap();
+
+            assert_eq!(read.len(), mapped.len(), "{path}");
+            for n in 0..read.len() {
+                let from_map = mapped.record(n).unwrap().unwrap();
+                assert!(matches!(from_map, Cow::Borrowed(_)), "{path} record {n}");
+                assert_eq!(
+                    read.record(n).unwrap().unwrap(),
+                    from_map,
+                    "{path} record {n}"
+                );
+            }
+        }
     }
 }

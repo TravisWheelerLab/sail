@@ -17,7 +17,7 @@ use crate::Record;
 use crate::collection::Indexable;
 use crate::error::{Error, Result, bail_parse};
 use crate::format::Format;
-use crate::index::{Delimit, Delimiter, Index, build_index};
+use crate::index::{Delimit, Delimiter, Framed, Index, build_index};
 use crate::parse::Parse;
 use crate::seq::as_str;
 #[cfg(feature = "mmap")]
@@ -458,22 +458,13 @@ impl Indexable for Stockholm {
 /// a `None` from `get` as a broken contract. [`validate`](Self::validate)
 /// clears a file of unknown provenance up front.
 #[cfg(any(unix, windows))]
-pub struct IndexedStockholm<S: Source = FileSource> {
-    source: S,
-    index: Index,
-}
+pub struct IndexedStockholm<S: Source = FileSource>(Framed<S>);
 
 #[cfg(any(unix, windows))]
 impl IndexedStockholm<FileSource> {
     /// Index the file at `path`, parsing none of it.
     pub fn open(path: impl AsRef<Path>) -> Result<Self> {
-        let source = FileSource::open(path)?;
-        let offsets = build_index::<_, StockholmDelimiter>(source.file())?;
-
-        Ok(IndexedStockholm {
-            source,
-            index: Index::new(Format::Stockholm, offsets),
-        })
+        Ok(IndexedStockholm(Framed::open(path, Format::Stockholm)?))
     }
 
     /// Address the file at `path` with `index` instead of scanning for it.
@@ -481,7 +472,7 @@ impl IndexedStockholm<FileSource> {
     /// # Errors
     ///
     /// An index of another format. Nothing here checks that it describes this
-    /// file; [`Index::load_from`] does that when one comes off disk.
+    /// file; [`is_current`](crate::index::is_current) does.
     pub fn with_index(path: impl AsRef<Path>, index: Index) -> Result<Self> {
         if index.format() != Format::Stockholm {
             bail_parse!(
@@ -491,9 +482,7 @@ impl IndexedStockholm<FileSource> {
             )
         }
 
-        let source = FileSource::open(path)?;
-
-        Ok(IndexedStockholm { source, index })
+        Ok(IndexedStockholm(Framed::with_index(path, index)?))
     }
 }
 
@@ -511,17 +500,10 @@ impl IndexedStockholm<MmapSource> {
     /// The file must not be modified or truncated while the collection is
     /// alive; see [`MmapSource::open`].
     pub unsafe fn map(path: impl AsRef<Path>) -> Result<Self> {
-        // SAFETY: the caller has promised, through this
-        //         function's own contract, not to modify
-        //         or truncate the file while the
-        //         collection is alive
-        let source = unsafe { MmapSource::open(path)? };
-        let offsets = build_index::<_, StockholmDelimiter>(source.bytes())?;
-
-        Ok(IndexedStockholm {
-            source,
-            index: Index::new(Format::Stockholm, offsets),
-        })
+        // SAFETY: forwarded to this function's own contract
+        Ok(IndexedStockholm(unsafe {
+            Framed::map(path, Format::Stockholm)?
+        }))
     }
 }
 
@@ -530,29 +512,19 @@ impl<S: Source> IndexedStockholm<S> {
     /// Where each alignment sits, and what each is called once
     /// [`name_index`](Self::name_index) has run.
     pub fn index(&self) -> &Index {
-        &self.index
+        self.0.index()
     }
 
     /// Name every alignment, by a byte scan of the range the index frames rather
     /// than a parse of it.
     pub fn name_index(&mut self) -> Result<()> {
-        // the fields are borrowed apart because name_with
-        // takes &mut self.index while the scan reads
-        // self.source
-        let source = &self.source;
-
-        self.index.name_with(|o| {
-            let bytes = source.range(o.start, o.n_bytes)?;
-
-            Ok(name_of(&bytes).map(|name| Cow::Owned(name.to_vec())))
-        })
+        self.0.name_index()
     }
 
     /// Read every alignment, returning the first that fails and its index.
     pub fn validate(&self) -> Result<()> {
         // a full pass over the file, which is why open does
-        // not do it -- that would be Stockholm with extra
-        // steps
+        // not do it -- that would be Stockholm with extra steps
         for n in 0..self.len() {
             self.try_get(n)
                 .map_err(|e| Error::parse(format!("record {n}: {e}")))?;
@@ -564,7 +536,8 @@ impl<S: Source> IndexedStockholm<S> {
     /// The `n`th alignment, or `None` past the end, keeping the failure reason
     /// that [`Indexable::get`] has to throw away.
     pub fn try_get(&self, n: usize) -> Result<Option<StockholmRecord>> {
-        self.record(n)?
+        self.0
+            .record(n)?
             .map(|bytes| StockholmParser::parse(&bytes))
             .transpose()
     }
@@ -574,11 +547,7 @@ impl<S: Source> IndexedStockholm<S> {
     /// Borrowed from a mapped source and owned from a read one, exactly as
     /// [`Source::range`] hands them over.
     pub fn record(&self, n: usize) -> Result<Option<Cow<'_, [u8]>>> {
-        let Some(o) = self.index.offset(n)? else {
-            return Ok(None);
-        };
-
-        Ok(Some(self.source.range(o.start, o.n_bytes)?))
+        self.0.record(n)
     }
 }
 
@@ -594,7 +563,7 @@ impl<S: Source> Indexable for IndexedStockholm<S> {
         Self: 'a;
 
     fn len(&self) -> usize {
-        self.index.len()
+        self.0.len()
     }
 
     /// Reads and parses the record's bytes on every call. A failure comes back

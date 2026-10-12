@@ -14,7 +14,7 @@ use crate::Record;
 use crate::collection::Indexable;
 use crate::error::{Error, Result, bail_parse};
 use crate::format::Format;
-use crate::index::{Delimit, Delimiter, Index, build_index};
+use crate::index::{Delimit, Delimiter, Framed, Index, build_index};
 use crate::parse::Parse;
 use crate::seq::as_str;
 #[cfg(feature = "mmap")]
@@ -868,22 +868,13 @@ impl Indexable for Hmm {
 /// a `None` from `get` as a broken contract. [`validate`](Self::validate)
 /// clears a file of unknown provenance up front.
 #[cfg(any(unix, windows))]
-pub struct IndexedHmm<S: Source = FileSource> {
-    source: S,
-    index: Index,
-}
+pub struct IndexedHmm<S: Source = FileSource>(Framed<S>);
 
 #[cfg(any(unix, windows))]
 impl IndexedHmm<FileSource> {
     /// Index the file at `path`, parsing none of it.
     pub fn open(path: impl AsRef<Path>) -> Result<Self> {
-        let source = FileSource::open(path)?;
-        let offsets = build_index::<_, HmmDelimiter>(source.file())?;
-
-        Ok(IndexedHmm {
-            source,
-            index: Index::new(Format::Hmm, offsets),
-        })
+        Ok(IndexedHmm(Framed::open(path, Format::Hmm)?))
     }
 
     /// Address the file at `path` with `index` instead of scanning for it.
@@ -891,7 +882,7 @@ impl IndexedHmm<FileSource> {
     /// # Errors
     ///
     /// An index of another format. Nothing here checks that it describes this
-    /// file; [`Index::load_from`] does that when one comes off disk.
+    /// file; [`is_current`](crate::index::is_current) does.
     pub fn with_index(path: impl AsRef<Path>, index: Index) -> Result<Self> {
         if index.format() != Format::Hmm {
             bail_parse!(
@@ -901,9 +892,7 @@ impl IndexedHmm<FileSource> {
             )
         }
 
-        let source = FileSource::open(path)?;
-
-        Ok(IndexedHmm { source, index })
+        Ok(IndexedHmm(Framed::with_index(path, index)?))
     }
 }
 
@@ -921,17 +910,8 @@ impl IndexedHmm<MmapSource> {
     /// The file must not be modified or truncated while the collection is
     /// alive; see [`MmapSource::open`].
     pub unsafe fn map(path: impl AsRef<Path>) -> Result<Self> {
-        // SAFETY: the caller has promised, through this
-        //         function's own contract, not to modify
-        //         or truncate the file while the
-        //         collection is alive
-        let source = unsafe { MmapSource::open(path)? };
-        let offsets = build_index::<_, HmmDelimiter>(source.bytes())?;
-
-        Ok(IndexedHmm {
-            source,
-            index: Index::new(Format::Hmm, offsets),
-        })
+        // SAFETY: forwarded to this function's own contract
+        Ok(IndexedHmm(unsafe { Framed::map(path, Format::Hmm)? }))
     }
 }
 
@@ -940,22 +920,13 @@ impl<S: Source> IndexedHmm<S> {
     /// Where each profile sits, and what each is called once
     /// [`name_index`](Self::name_index) has run.
     pub fn index(&self) -> &Index {
-        &self.index
+        self.0.index()
     }
 
     /// Name every profile, by a byte scan of the range the index frames rather
     /// than a parse of it.
     pub fn name_index(&mut self) -> Result<()> {
-        // the fields are borrowed apart because name_with
-        // takes &mut self.index while the scan reads
-        // self.source
-        let source = &self.source;
-
-        self.index.name_with(|o| {
-            let bytes = source.range(o.start, o.n_bytes)?;
-
-            Ok(name_of(&bytes).map(|name| Cow::Owned(name.to_vec())))
-        })
+        self.0.name_index()
     }
 
     /// Read every profile, returning the first that fails and its index.
@@ -973,7 +944,8 @@ impl<S: Source> IndexedHmm<S> {
     /// The `n`th profile, or `None` past the end, keeping the failure reason
     /// that [`Indexable::get`] has to throw away.
     pub fn try_get(&self, n: usize) -> Result<Option<HmmRecord>> {
-        self.record(n)?
+        self.0
+            .record(n)?
             .map(|bytes| HmmParser::parse(&bytes))
             .transpose()
     }
@@ -983,11 +955,7 @@ impl<S: Source> IndexedHmm<S> {
     /// Borrowed from a mapped source and owned from a read one, exactly as
     /// [`Source::range`] hands them over.
     pub fn record(&self, n: usize) -> Result<Option<Cow<'_, [u8]>>> {
-        let Some(o) = self.index.offset(n)? else {
-            return Ok(None);
-        };
-
-        Ok(Some(self.source.range(o.start, o.n_bytes)?))
+        self.0.record(n)
     }
 }
 
@@ -1003,7 +971,7 @@ impl<S: Source> Indexable for IndexedHmm<S> {
         Self: 'a;
 
     fn len(&self) -> usize {
-        self.index.len()
+        self.0.len()
     }
 
     /// Reads and parses the record's bytes on every call. A failure comes back

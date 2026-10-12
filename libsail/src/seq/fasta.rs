@@ -13,7 +13,7 @@ use crate::Record;
 use crate::collection::Indexable;
 use crate::error::{Error, Result, bail_parse};
 use crate::format::Format;
-use crate::index::{Delimit, Delimiter, Index, build_index};
+use crate::index::{Delimit, Delimiter, Framed, Index, build_index};
 use crate::parse::Parse;
 use crate::seq::as_str;
 #[cfg(feature = "mmap")]
@@ -326,22 +326,13 @@ impl Indexable for Fasta {
 /// Keeps 16 bytes per record and reads one on demand, so it suits sparse
 /// access. Unix and Windows only; [`MmapFasta`] maps the file instead.
 #[cfg(any(unix, windows))]
-pub struct IndexedFasta<S: Source = FileSource> {
-    source: S,
-    index: Index,
-}
+pub struct IndexedFasta<S: Source = FileSource>(Framed<S>);
 
 #[cfg(any(unix, windows))]
 impl IndexedFasta<FileSource> {
     /// Index the file at `path`, parsing none of it.
     pub fn open(path: impl AsRef<Path>) -> Result<Self> {
-        let source = FileSource::open(path)?;
-        let offsets = build_index::<_, FastaDelimiter>(source.file())?;
-
-        Ok(IndexedFasta {
-            source,
-            index: Index::new(Format::Fasta, offsets),
-        })
+        Ok(IndexedFasta(Framed::open(path, Format::Fasta)?))
     }
 
     /// Address the file at `path` with `index` instead of scanning for it.
@@ -349,7 +340,7 @@ impl IndexedFasta<FileSource> {
     /// # Errors
     ///
     /// An index of another format. Nothing here checks that it describes this
-    /// file; [`Index::load_from`] does that when one comes off disk.
+    /// file; [`is_current`](crate::index::is_current) does.
     pub fn with_index(path: impl AsRef<Path>, index: Index) -> Result<Self> {
         if index.format() != Format::Fasta {
             bail_parse!(
@@ -359,9 +350,7 @@ impl IndexedFasta<FileSource> {
             )
         }
 
-        let source = FileSource::open(path)?;
-
-        Ok(IndexedFasta { source, index })
+        Ok(IndexedFasta(Framed::with_index(path, index)?))
     }
 }
 
@@ -379,17 +368,8 @@ impl IndexedFasta<MmapSource> {
     /// The file must not be modified or truncated while the collection is
     /// alive; see [`MmapSource::open`].
     pub unsafe fn map(path: impl AsRef<Path>) -> Result<Self> {
-        // SAFETY: the caller has promised, through this
-        //         function's own contract, not to modify
-        //         or truncate the file while the
-        //         collection is alive
-        let source = unsafe { MmapSource::open(path)? };
-        let offsets = build_index::<_, FastaDelimiter>(source.bytes())?;
-
-        Ok(IndexedFasta {
-            source,
-            index: Index::new(Format::Fasta, offsets),
-        })
+        // SAFETY: forwarded to this function's own contract
+        Ok(IndexedFasta(unsafe { Framed::map(path, Format::Fasta)? }))
     }
 }
 
@@ -398,22 +378,13 @@ impl<S: Source> IndexedFasta<S> {
     /// Where each record sits, and what each is called once
     /// [`name_index`](Self::name_index) has run.
     pub fn index(&self) -> &Index {
-        &self.index
+        self.0.index()
     }
 
     /// Name every record, by a byte scan of the range the index frames rather
     /// than a parse of it.
     pub fn name_index(&mut self) -> Result<()> {
-        // the fields are borrowed apart because name_with
-        // takes &mut self.index while the scan reads
-        // self.source
-        let source = &self.source;
-
-        self.index.name_with(|o| {
-            let bytes = source.range(o.start, o.n_bytes)?;
-
-            Ok(name_of(&bytes).map(|name| Cow::Owned(name.to_vec())))
-        })
+        self.0.name_index()
     }
 
     /// Read every record, returning the first that fails and its index.
@@ -431,7 +402,8 @@ impl<S: Source> IndexedFasta<S> {
     /// The `n`th record, or `None` past the end, keeping the failure reason
     /// that [`Indexable::get`] has to throw away.
     pub fn try_get(&self, n: usize) -> Result<Option<FastaRecord>> {
-        self.record(n)?
+        self.0
+            .record(n)?
             .map(|bytes| FastaParser::parse(&bytes))
             .transpose()
     }
@@ -441,11 +413,7 @@ impl<S: Source> IndexedFasta<S> {
     /// Borrowed from a mapped source and owned from a read one, exactly as
     /// [`Source::range`] hands them over.
     pub fn record(&self, n: usize) -> Result<Option<Cow<'_, [u8]>>> {
-        let Some(o) = self.index.offset(n)? else {
-            return Ok(None);
-        };
-
-        Ok(Some(self.source.range(o.start, o.n_bytes)?))
+        self.0.record(n)
     }
 }
 
@@ -461,7 +429,7 @@ impl<S: Source> Indexable for IndexedFasta<S> {
         Self: 'a;
 
     fn len(&self) -> usize {
-        self.index.len()
+        self.0.len()
     }
 
     /// Reads and parses the record's bytes on every call. A failure comes back
