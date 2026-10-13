@@ -93,6 +93,27 @@ link at the foot of the changelog are all part of the release commit. Release
 tags are annotated and named `<crate>-v<version>`. Publish from `main` after
 `dev` merges in, with a clean tree.
 
+**Pushing `main`.** `scripts/main-gate.sh` runs before every push. It refuses
+a push that moves `main` unless the pushed commit passes all of these:
+
+- It carries an annotated `<crate>-v<version>` tag.
+- That version matches the crate's `Cargo.toml`, and the crate's changelog has
+  a heading for it.
+- For a `libsail` tag, `cargo semver-checks` passes against the previous
+  `libsail` tag.
+- `cargo fmt --check`, `cargo clippy` with warnings denied, and `cargo test`
+  pass.
+
+The gate checks the pushed commit in a worktree under `target/main-gate`, so
+the branch checked out does not matter. It refuses every push to `main` when
+`cargo-semver-checks` is not installed. Git never copies hook settings into a
+clone, so each clone registers the gate once:
+
+```console
+$ git config hook.main-gate.event pre-push
+$ git config hook.main-gate.command scripts/main-gate.sh
+```
+
 **Versions.** Each crate is versioned by what changed in it, and the two are
 never aligned for tidiness. A break in `libsail` moves `libsail`'s minor, under
 cargo's rule that 0.x's minor is the breaking axis, and moves nothing in `sail`
