@@ -15,11 +15,20 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-09T21:28:01.78676153Z",
-  "updated_at": "2026-10-13T20:14:18.203478126Z",
+  "updated_at": "2026-10-13T21:32:05.817091877Z",
   "closed_at": "2026-10-13T20:14:18.203478126Z",
   "close_reason": "Decided by Jack: by reference. Each part keeps its own .saidx, and the parts file carries paths, stamps and counts. A part's .saidx stays usable on its own without the parts file.",
   "resolution": "done",
-  "notes": [],
+  "notes": [
+    {
+      "id": "d0aab7d1",
+      "at": "2026-10-13T21:32:05.817091357Z",
+      "author": "Jack Roddy/424f83e5",
+      "text": "Reopened as a question in sail-dfcb07, which adds a packed, zip-style layout that this issue's two options did not consider. The by-reference atlas stays as built until that issue is decided.",
+      "commit": "2170fd0",
+      "branch": "dev"
+    }
+  ],
   "stamps": {
     "created": {
       "commit": "06334a4",
