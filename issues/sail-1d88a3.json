@@ -3,7 +3,7 @@
   "title": "sail could draw its default seed from std instead of rand",
   "body": "`sail` depends on `rand` for one `u64`, drawn when `--seed` is absent, in `shuffle`, `sample` and `skim`. `std::hash::RandomState` would cover that call. Dropping `rand` removes its dependency tree from `sail`'s build.",
   "type": "chore",
-  "status": "in_progress",
+  "status": "closed",
   "priority": 4,
   "labels": [
     "sail"
@@ -12,19 +12,22 @@
   "blocked_by": [],
   "related": [],
   "assignee": "Jack Roddy/424f83e5",
-  "lease_expires": "2026-10-13T22:51:43.382070323Z",
+  "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-13T01:54:12.407939568Z",
-  "updated_at": "2026-10-13T22:36:43.382070323Z",
-  "closed_at": null,
-  "close_reason": null,
-  "resolution": null,
+  "updated_at": "2026-10-13T22:37:13.896912976Z",
+  "closed_at": "2026-10-13T22:37:13.896912976Z",
+  "close_reason": "Landed in 5402129 on dev. default_seed in sail/src/commands/mod.rs hashes nothing with a fresh RandomState; std has no stable random API on 1.98.",
+  "resolution": "done",
   "notes": [],
   "stamps": {
     "created": {
       "commit": "ab97b44",
       "branch": "dev"
     },
-    "closed": null
+    "closed": {
+      "commit": "5402129",
+      "branch": "dev"
+    }
   }
 }
