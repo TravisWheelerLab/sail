@@ -1,7 +1,7 @@
 {
   "id": "sail-0705fb",
   "title": "One Reader over several files",
-  "body": "Aggregate<I> addresses several collections as one range. There is no streaming counterpart, and Read::chain is not one:\n\n    a.chain(b)                  -> [\"a1\", \"a2\", \"b1\", \"b2\"]\n    a_without_newline.chain(b)  -> [\"a1\", \"a2\",       \"b2\"]\n\nb1 is gone and nothing reports it. Reader seeds a sentinel newline before byte 0 so a file opening with a delimiter needs no special case, and that sentinel is per stream rather than per file. Chained, the bytes do hold `TTTT>b1 x` on one line, so three records is the right reading of them. This is not a libsail bug, which is what makes it dangerous: nothing is positioned to notice.\n\nThe proposal is a reader over several sources that reframes at every boundary, presenting one global index space:\n\n    let mut reader = Reader::over(paths, format)?;\n\n    for n in Selection::new(reader.count()?, m, seed) {\n        if !reader.advance_to(n)? { break; }\n        take(reader.record());\n    }\n\nsail is already immune, because every multi-input command builds a fresh Reader per entry rather than chaining. That per-file loop is the behaviour to lift.",
+  "body": "`Aggregate<I>` addresses several collections as one range. There is no streaming counterpart. `Read::chain` is not one:\n\n```text\na.chain(b)                  -> [\"a1\", \"a2\", \"b1\", \"b2\"]\na_without_newline.chain(b)  -> [\"a1\", \"a2\",       \"b2\"]\n```\n\n`b1` is gone and nothing reports it. `Reader` seeds a sentinel newline before byte 0 so a file opening with a delimiter needs no special case. That sentinel is per stream rather than per file. Chained, the bytes do hold `TTTT>b1 x` on one line, so three records is the right reading of them. This is not a `libsail` bug, which is what makes it dangerous: nothing is positioned to notice.\n\nThe proposal is a reader over several sources that reframes at every boundary and presents one global index space:\n\n```rust\nlet mut reader = Reader::over(paths, format)?;\n\nfor n in Selection::new(reader.count()?, m, seed) {\n    if !reader.advance_to(n)? { break; }\n    take(reader.record());\n}\n```\n\n`sail` is already immune, because every multi-input command builds a fresh `Reader` per entry rather than chaining. That per-file loop is the behaviour to lift.",
   "type": "feature",
   "status": "open",
   "priority": 2,
@@ -18,7 +18,7 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-09T21:28:01.73339981Z",
-  "updated_at": "2026-10-13T01:54:12.151240066Z",
+  "updated_at": "2026-10-13T02:04:06.505650537Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
