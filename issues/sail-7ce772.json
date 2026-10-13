@@ -3,7 +3,7 @@
   "title": "No test pins sail get's past-the-end error on each backend",
   "body": "`sail get` with a position past the end fails with `position {last} was asked for and the input holds {n} records`. Each of the three backends builds that message separately in `get.rs`: Indexed, Stream and Memory. No test in `sail/tests/cli.rs` matches it, so a backend whose wording or count drifts passes every test.\n\n## Proposal\n\nOne `cli.rs` test per backend that runs `get` with a position past the end of a fixture. Each test checks the exit code and the exact stderr line, including the record count.",
   "type": "chore",
-  "status": "in_progress",
+  "status": "closed",
   "priority": 3,
   "labels": [
     "sail"
@@ -12,19 +12,22 @@
   "blocked_by": [],
   "related": [],
   "assignee": "Jack Roddy/424f83e5",
-  "lease_expires": "2026-10-13T22:45:30.800253857Z",
+  "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-13T19:35:51.972992332Z",
-  "updated_at": "2026-10-13T22:30:30.800253857Z",
-  "closed_at": null,
-  "close_reason": null,
-  "resolution": null,
+  "updated_at": "2026-10-13T22:31:10.55849464Z",
+  "closed_at": "2026-10-13T22:31:10.55849464Z",
+  "close_reason": "Landed in d9d482d on dev: a_position_past_the_end_fails_the_same_way_on_every_backend in sail/tests/cli.rs.",
+  "resolution": "done",
   "notes": [],
   "stamps": {
     "created": {
       "commit": "c5f3fa2",
       "branch": "dev"
     },
-    "closed": null
+    "closed": {
+      "commit": "9ba892d",
+      "branch": "dev"
+    }
   }
 }
