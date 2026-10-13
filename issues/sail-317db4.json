@@ -15,7 +15,7 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-09T21:28:01.722959268Z",
-  "updated_at": "2026-10-13T02:05:01.766749609Z",
+  "updated_at": "2026-10-13T02:05:01.835556269Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
@@ -24,9 +24,10 @@
       "id": "c1a4e7c7",
       "at": "2026-10-09T21:28:01.875562764Z",
       "author": "Jack Roddy/d58bf845",
-      "text": "count as a free fn reads as 'count this source'; as a constructor-and-method it invites counting and then reusing a consumed reader. Leaning free fn.",
+      "text": "`count` as a free fn reads as 'count this source'. As a constructor-and-method it invites counting and then reusing a consumed reader. Leaning free fn.",
       "commit": "06334a4",
-      "branch": "main"
+      "branch": "main",
+      "edited_at": "2026-10-13T02:05:01.835556059Z"
     },
     {
       "id": "c0073356",
