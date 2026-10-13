@@ -18,7 +18,7 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-09T21:28:01.73339981Z",
-  "updated_at": "2026-10-13T02:04:06.505650537Z",
+  "updated_at": "2026-10-13T02:04:06.513839187Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
@@ -27,9 +27,10 @@
       "id": "138f16ef",
       "at": "2026-10-09T21:28:01.899405285Z",
       "author": "Jack Roddy/d58bf845",
-      "text": "Aggregate<I> is not involved: this is a Reader spanning sources, Aggregate spans Indexables. Sharing a name would suggest a relationship that is not there.",
+      "text": "`Aggregate<I>` is not involved: this is a `Reader` spanning sources, where `Aggregate` spans `Indexable`s. Sharing a name would suggest a relationship that is not there.",
       "commit": "06334a4",
-      "branch": "main"
+      "branch": "main",
+      "edited_at": "2026-10-13T02:04:06.513838947Z"
     },
     {
       "id": "cd043495",
