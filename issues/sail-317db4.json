@@ -15,7 +15,7 @@
   "lease_expires": "2026-10-13T18:31:53.976138793Z",
   "defer_until": null,
   "created_at": "2026-10-09T21:28:01.722959268Z",
-  "updated_at": "2026-10-13T19:14:03.777465888Z",
+  "updated_at": "2026-10-13T19:16:14.520282792Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
@@ -55,6 +55,14 @@
       "commit": "ab97b44",
       "branch": "dev",
       "edited_at": "2026-10-13T01:54:12.143337728Z"
+    },
+    {
+      "id": "822153cc",
+      "at": "2026-10-13T19:16:14.520282072Z",
+      "author": "Jack Roddy/424f83e5",
+      "text": "Built on `dev`, not yet committed. `index::count`, `Reader::position`, `Reader::advance_to`, and the same two methods on `lines::Rows` are in, with tests in `reader_tests` and `lines::tests`. `sail skim`'s streaming arm uses `advance_to`, and `sail skim` and `sail count` use `count`.\n\n`sail get`'s streaming loop was left as it is. Its error for a position past the end reports how many records the input holds, and `advance_to` returning `false` leaves `position()` at `None`, so the loop would need its own counter back.\n\n`offset()` after `advance` returns `false` still reports a stale start with zero length. sail-427b32 covers that state.",
+      "commit": "6681859",
+      "branch": "dev"
     }
   ],
   "stamps": {
