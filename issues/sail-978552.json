@@ -1,7 +1,7 @@
 {
   "id": "sail-978552",
   "title": "What does a stale part of an aggregate index do?",
-  "body": "Today, when is_current says the index beside an input is stale, sail's index_of in input.rs builds a fresh Index in memory and writes nothing to disk. It prints nothing and raises no error. Applying that to an aggregate means one edit to one file can trigger a scan the caller never asked for. Refusing and naming the part is the other reading.",
+  "body": "Today, when is_current says the index beside an input is stale, sail's index_of in input.rs builds a fresh Index in memory and writes nothing to disk. It prints nothing and raises no error.\n\nFor an aggregate:\n\n1. Rebuild the stale part in memory, as today for one file. Cost: one edit to one of a thousand files triggers a scan the caller never asked for and never sees.\n2. Refuse and name the part. Cost: the caller runs sail index again before the command works.\n\nLean: refuse and name the part. libsail reports stale parts as positions and sail decides what to do. The one-file behaviour deserves the same question in its own issue.",
   "type": "decision",
   "status": "open",
   "priority": 3,
@@ -15,7 +15,7 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-09T21:28:01.797562819Z",
-  "updated_at": "2026-10-09T21:38:00.349662496Z",
+  "updated_at": "2026-10-13T01:53:31.682194019Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
