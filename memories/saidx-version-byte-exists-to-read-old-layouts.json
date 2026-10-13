@@ -1,10 +1,10 @@
 {
   "slug": "saidx-version-byte-exists-to-read-old-layouts",
-  "text": "The version byte at offset 4 of a .saidx file exists so a newer libsail can still read an index written by an older one (Jack: 'the version byte is how we know to read the old index formats'). A layout change bumps VERSION and gains a reader arm for the old layout; it does not invalidate index files on disk. The source misleads: read_from and read_head reject any other version and the comment above VERSION calls that the policy. That is what the code does today, not what the byte is for.",
+  "text": "The version byte at offset 4 of a `.saidx` file exists so a newer `libsail` can still read an index written by an older one (Jack: 'the version byte is how we know to read the old index formats'). A layout change bumps `VERSION` and gains a reader arm for the old layout. It does not invalidate index files on disk. The source misleads: `read_from` and `read_head` reject any other version and the comment above `VERSION` calls that the policy. That is what the code does today, not what the byte is for.",
   "created_at": "2026-10-09T21:29:55.858118349Z",
-  "updated_at": "2026-10-09T21:42:36.33347421Z",
+  "updated_at": "2026-10-13T02:05:01.880755501Z",
   "stamp": {
-    "commit": "dcaecb1",
+    "commit": "6681859",
     "branch": "dev"
   }
 }
