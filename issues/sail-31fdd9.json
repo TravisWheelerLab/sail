@@ -16,7 +16,7 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-09T21:28:01.711327875Z",
-  "updated_at": "2026-10-13T22:13:49.223930373Z",
+  "updated_at": "2026-10-13T22:24:35.673056068Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
@@ -36,7 +36,8 @@
       "author": "Jack Roddy/424f83e5",
       "text": "`Atlas` and `sail atlas` are behind `#[cfg(sail_unstable)]` (sail-917c42), so their changelog entries came out of `[Unreleased]`. Put them back when the gate comes off.\n\nFor `libsail`, under `### Added`:\n\n```text\n- `atlas::Atlas`, an ordered list of data files kept in a `.satlas`\n  file of its own. `build(paths, format)` writes a named `.saidx` beside each\n  path that lacks a current one and reuses the rest. The atlas stamps each\n  data file and records its count, so `starts()` and `stale()` open no index\n  file. Parts are stored relative to the atlas's directory, so the two can\n  move together.\n```\n\nFor `sail`, under `### Added`, without the last sentence once sail-4d86c8 lands:\n\n```text\n- `atlas`, which writes a `.saidx` beside each of several files, then a\n  `.satlas` file at `-o` listing them in order with each file's record count.\n  It reuses a current index and rebuilds a missing or stale one. Every input\n  must be the same format. No command reads an atlas yet.\n```\n\nThe README's command count goes from twenty to twenty-one.",
       "commit": "473397a",
-      "branch": "dev"
+      "branch": "dev",
+      "deleted_at": "2026-10-13T22:24:35.673055858Z"
     }
   ],
   "stamps": {
