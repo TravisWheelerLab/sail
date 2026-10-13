@@ -1,0 +1,30 @@
+{
+  "id": "sail-7ce772",
+  "title": "No test pins sail get's past-the-end error on each backend",
+  "body": "`sail get` with a position past the end fails with `position {last} was asked for and the input holds {n} records`. Each of the three backends builds that message separately in `get.rs`: Indexed, Stream and Memory. No test in `sail/tests/cli.rs` matches it, so a backend whose wording or count drifts passes every test.\n\n## Proposal\n\nOne `cli.rs` test per backend that runs `get` with a position past the end of a fixture. Each test checks the exit code and the exact stderr line, including the record count.",
+  "type": "chore",
+  "status": "open",
+  "priority": 3,
+  "labels": [
+    "sail"
+  ],
+  "parent": null,
+  "blocked_by": [],
+  "related": [],
+  "assignee": null,
+  "lease_expires": null,
+  "defer_until": null,
+  "created_at": "2026-10-13T19:35:51.972992332Z",
+  "updated_at": "2026-10-13T19:35:51.972992332Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
+  "notes": [],
+  "stamps": {
+    "created": {
+      "commit": "c5f3fa2",
+      "branch": "dev"
+    },
+    "closed": null
+  }
+}
