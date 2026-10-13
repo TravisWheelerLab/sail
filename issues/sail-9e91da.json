@@ -3,7 +3,7 @@
   "title": "cargo doc reports six warnings on libsail",
   "body": "`cargo doc --workspace --all-features --no-deps` reports six warnings on `libsail` at ab97b44:\n\n- the doc on `index::EXTENSION` links `Index::path_for`, but `path_for` is a free function\n- an unresolved link to `Index::save_as`\n- the module doc of `index` and the doc on `VALID` link the private items `scan` and `frame`\n- `format` is both a module and a macro",
   "type": "bug",
-  "status": "in_progress",
+  "status": "closed",
   "priority": 4,
   "labels": [
     "libsail"
@@ -12,19 +12,22 @@
   "blocked_by": [],
   "related": [],
   "assignee": "Jack Roddy/424f83e5",
-  "lease_expires": "2026-10-13T21:53:01.567015354Z",
+  "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-13T01:54:12.39991554Z",
-  "updated_at": "2026-10-13T21:38:01.567015354Z",
-  "closed_at": null,
-  "close_reason": null,
-  "resolution": null,
+  "updated_at": "2026-10-13T21:46:19.099948662Z",
+  "closed_at": "2026-10-13T21:46:19.099948662Z",
+  "close_reason": "Landed in 473397a on dev. cargo doc reports no warnings, with default features and with --all-features.",
+  "resolution": "done",
   "notes": [],
   "stamps": {
     "created": {
       "commit": "ab97b44",
       "branch": "dev"
     },
-    "closed": null
+    "closed": {
+      "commit": "473397a",
+      "branch": "dev"
+    }
   }
 }
