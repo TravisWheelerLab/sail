@@ -1,0 +1,30 @@
+{
+  "id": "sail-3a486e",
+  "title": "Readers and Aggregate are built from an Atlas",
+  "body": "`atlas::Atlas` lists data files in order with each one's record count and stamp. Two `libsail` types already read several sources as one run of records, and neither can be built from an atlas:\n\n- `index::Readers::new(paths, format)` streams the files one after another. Its `count()` opens and scans every file to learn the per-file counts that let `advance_to` skip whole files.\n- `collection::Aggregate<I>` numbers several `Indexable` collections as one range. A caller builds each part (an `IndexedFasta` from its `.saidx`, for example) and hands them over.\n\nAn atlas already holds the paths, the format and the counts, so both could be built from it without a counting pass or a per-part loop in the caller.\n\n## Options\n\n| option | signature | cost |\n|---|---|---|\n| a constructor on each type | `Readers::from_atlas(&Atlas)`, `Aggregate::from_atlas(&Atlas)` | `Aggregate` is generic over its part type, so its constructor needs the part type chosen by the caller or one impl per format |\n| methods on `Atlas` | `atlas.readers()`, `atlas.indexed::<IndexedFasta>()` | `atlas` depends on `collection` and `seq` |\n| `From<&Atlas>` | `Readers::from(&atlas)` | the generic `Aggregate` case has the same problem as the first option |\n\nBoth constructors refuse an atlas with stale parts and name them by position (sail-978552). A part whose `.saidx` is missing or stale is refused the same way.\n\nLeaning: a constructor on each type. `Readers` takes the counts as given and skips `count()`'s pass. `Aggregate` gets a constructor generic over a part type that can open itself from a path and its `.saidx`.",
+  "type": "decision",
+  "status": "open",
+  "priority": 2,
+  "labels": [
+    "libsail"
+  ],
+  "parent": "sail-31fdd9",
+  "blocked_by": [],
+  "related": [],
+  "assignee": null,
+  "lease_expires": null,
+  "defer_until": null,
+  "created_at": "2026-10-13T20:42:12.677373003Z",
+  "updated_at": "2026-10-13T20:42:12.677373003Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
+  "notes": [],
+  "stamps": {
+    "created": {
+      "commit": "7cd1e54",
+      "branch": "dev"
+    },
+    "closed": null
+  }
+}
