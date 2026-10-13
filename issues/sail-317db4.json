@@ -15,7 +15,7 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-09T21:28:01.722959268Z",
-  "updated_at": "2026-10-13T02:05:01.835556269Z",
+  "updated_at": "2026-10-13T02:05:01.842988045Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
@@ -33,9 +33,10 @@
       "id": "c0073356",
       "at": "2026-10-09T21:28:01.883466584Z",
       "author": "Jack Roddy/d58bf845",
-      "text": "Both names are nearly taken: index::count_in(path) reads a count out of an index file's header, and Index::position(name) looks a record up by name. A free index::count beside count_in, and Reader::position beside Index::position, differ in what they answer and not in what they are called.",
+      "text": "Both names are nearly taken: `index::count_in(path)` reads a count out of an index file's header, and `Index::position(name)` looks a record up by name. A free `index::count` beside `count_in`, and `Reader::position` beside `Index::position`, differ in what they answer and not in what they are called.",
       "commit": "06334a4",
-      "branch": "main"
+      "branch": "main",
+      "edited_at": "2026-10-13T02:05:01.842987825Z"
     },
     {
       "id": "307c6a91",
