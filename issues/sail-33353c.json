@@ -15,9 +15,9 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-13T20:16:08.268434359Z",
-  "updated_at": "2026-10-13T20:17:38.17588166Z",
+  "updated_at": "2026-10-13T22:24:35.633365709Z",
   "closed_at": "2026-10-13T20:17:38.17588166Z",
-  "close_reason": "Landed in 216d1f0 on dev. sail count and sail names never read the index file and are tracked in sail-fe4c0a.",
+  "close_reason": "Landed in f3773d8 on dev. sail count and sail names never read the index file and are tracked in sail-fe4c0a.",
   "resolution": "done",
   "notes": [
     {
