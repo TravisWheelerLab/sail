@@ -4,8 +4,8 @@
 //! line — FASTA's `>` opens the record it introduces, Stockholm's `//` closes
 //! the one it ends.
 //!
-//! [`scan`] reads bytes and reports delimiter positions, which is where the
-//! chunk-boundary care lives. [`frame`] turns those into [`Offset`]s, which is
+//! `scan` reads bytes and reports delimiter positions, which is where the
+//! chunk-boundary care lives. `frame` turns those into [`Offset`]s, which is
 //! pure arithmetic and the only part that consults [`Delimiter`].
 
 use std::borrow::Cow;
@@ -66,7 +66,7 @@ pub trait Delimit {
     // the longest run that cannot contain a whole pattern
     const CARRY: usize = Self::WIDTH - 1;
 
-    /// Fails to compile for a delimiter [`scan`] cannot handle.
+    /// Fails to compile for a delimiter `scan` cannot handle.
     const VALID: () = {
         // CARRY of 0 carries nothing, so buf[0] -- the
         // seeded newline standing in for the line ending
@@ -273,7 +273,7 @@ where
 
 // ---
 
-/// The extension [`Index::path_for`] appends.
+/// The extension [`path_for`] appends.
 pub const EXTENSION: &str = "saidx";
 
 const MAGIC: [u8; 4] = *b"SLIX";
@@ -296,7 +296,7 @@ const MAX_NAME: usize = 64 * 1024;
 /// Where every record of one file sits, and what each is called.
 ///
 /// [`new`](Index::new) holds only offsets; [`name_with`](Index::name_with)
-/// adds the names, and [`save_as`](Index::save_as) writes the pair beside the
+/// adds the names, and [`write`](Index::write) saves the pair, stamped with the
 /// file they describe.
 #[derive(Debug)]
 pub struct Index {
@@ -706,8 +706,6 @@ impl Index {
         Ok(index)
     }
 
-    /// The path a file's index is written to: the file's own, plus
-    /// [`EXTENSION`].
     /// Read the whole index at `path` into memory.
     pub fn read(path: &Path) -> Result<Index> {
         let (index, _, _) = Index::read_from(BufReader::new(File::open(path)?))?;

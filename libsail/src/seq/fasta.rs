@@ -324,7 +324,8 @@ impl Indexable for Fasta {
 
 /// Every record of a FASTA file, addressed on disk instead of held in memory.
 /// Keeps 16 bytes per record and reads one on demand, so it suits sparse
-/// access. Unix and Windows only; [`MmapFasta`] maps the file instead.
+/// access. Unix and Windows only; `MmapFasta`, with the `mmap` feature, maps the file
+/// instead.
 #[cfg(any(unix, windows))]
 pub struct IndexedFasta<S: Source = FileSource>(Framed<S>);
 

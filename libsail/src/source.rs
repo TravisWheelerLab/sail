@@ -1,8 +1,9 @@
 //! Where an indexed collection's bytes come from.
 //!
-//! [`FileSource`] reads each range when asked; [`MmapSource`] has the file
-//! mapped and hands back a slice of it. Which one a collection holds is a type
-//! parameter, so a caller picks the trade and pays for nothing else.
+//! [`FileSource`] reads each range when asked; `MmapSource`, with the `mmap`
+//! feature, has the file mapped and hands back a slice of it. Which one a
+//! collection holds is a type parameter, so a caller picks the trade and pays
+//! for nothing else.
 
 use std::borrow::Cow;
 use std::fs::File;

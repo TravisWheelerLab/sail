@@ -450,7 +450,8 @@ impl Indexable for Stockholm {
 
 /// Every alignment of a Stockholm file, addressed on disk instead of held in
 /// memory. Keeps 16 bytes per record and reads one on demand, so it suits
-/// sparse access. Unix and Windows only; [`MmapStockholm`] maps the file.
+/// sparse access. Unix and Windows only; `MmapStockholm`, with the `mmap`
+/// feature, maps the file.
 ///
 /// # Panics
 ///

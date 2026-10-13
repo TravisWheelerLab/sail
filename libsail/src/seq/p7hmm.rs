@@ -860,7 +860,8 @@ impl Indexable for Hmm {
 
 /// Every profile of a p7hmm file, addressed on disk instead of held in memory.
 /// Keeps 16 bytes per record and reads one on demand, so it suits sparse
-/// access. Unix and Windows only; [`MmapHmm`] maps the file instead.
+/// access. Unix and Windows only; `MmapHmm`, with the `mmap` feature, maps the file
+/// instead.
 ///
 /// # Panics
 ///
