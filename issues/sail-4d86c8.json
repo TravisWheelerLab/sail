@@ -10,14 +10,15 @@
   ],
   "parent": "sail-31fdd9",
   "blocked_by": [
-    "sail-3a486e"
+    "sail-3a486e",
+    "sail-2413e6"
   ],
   "related": [],
   "assignee": null,
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-13T20:42:12.686982814Z",
-  "updated_at": "2026-10-13T20:42:12.686982814Z",
+  "updated_at": "2026-10-13T20:42:12.694594934Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
