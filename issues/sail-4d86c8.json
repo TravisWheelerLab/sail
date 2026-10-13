@@ -1,0 +1,32 @@
+{
+  "id": "sail-4d86c8",
+  "title": "sail commands read an atlas as one input",
+  "body": "`sail` subcommands take data files and stdin as inputs. An atlas written by `sail atlas` (sail-2413e6) cannot be passed to any of them.\n\n## Proposal\n\nEvery subcommand accepts an atlas wherever it accepts a data file, and reads it as one input whose records are numbered as one run across its parts. `sail get all.satlas 500` counts across files, and `sail skim all.satlas -n 1000` draws from all of them. That differs from `sail get a.fa b.fa 500`, where each file is its own input with its own numbering.\n\n- An input is an atlas when it opens with the magic `SLAT`, read the way `format::detect` reads a data file's first bytes. The extension plays no part.\n- The stream backend reads it through `Readers` with the atlas's counts, so `sail skim` needs no counting pass. The indexed backend reads it through `Aggregate`. The memory backend loads every part.\n- An atlas with a stale part is refused. The error names the part and says to run `sail atlas` again (sail-978552).\n\nBuilt on sail-3a486e, which adds the `libsail` constructors.",
+  "type": "feature",
+  "status": "open",
+  "priority": 2,
+  "labels": [
+    "sail"
+  ],
+  "parent": "sail-31fdd9",
+  "blocked_by": [
+    "sail-3a486e"
+  ],
+  "related": [],
+  "assignee": null,
+  "lease_expires": null,
+  "defer_until": null,
+  "created_at": "2026-10-13T20:42:12.686982814Z",
+  "updated_at": "2026-10-13T20:42:12.686982814Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
+  "notes": [],
+  "stamps": {
+    "created": {
+      "commit": "7cd1e54",
+      "branch": "dev"
+    },
+    "closed": null
+  }
+}
