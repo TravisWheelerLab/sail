@@ -1,10 +1,10 @@
 {
   "slug": "jack-did-not-write-most-of-libsail",
-  "text": "Most of the sail workspace was generated in earlier sessions, not written by Jack. He does not carry its names and conventions as shared context: when proposing a change built on an existing signature, say plainly what the existing pieces are with concrete examples before using parameter names. His confusion over a signature is evidence about the API, and an objection to earlier-session code is a design review, not a request for tutoring.",
+  "text": "Most of the sail workspace was generated in earlier sessions. Jack did not write it and does not carry its names and conventions as shared context.",
   "created_at": "2026-10-09T21:29:31.019670688Z",
-  "updated_at": "2026-10-09T21:42:36.253384066Z",
+  "updated_at": "2026-10-13T01:54:12.374916165Z",
   "stamp": {
-    "commit": "dcaecb1",
+    "commit": "ab97b44",
     "branch": "dev"
   }
 }
