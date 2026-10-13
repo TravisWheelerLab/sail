@@ -1,6 +1,6 @@
 {
   "id": "sail-bb932e",
-  "title": "Eight-byte alignment in the index file, as VERSION 2 with a reader for 1",
+  "title": "The index file is padded to eight-byte alignment",
   "body": "Nothing needs this now. Doing it early is cheaper than doing it later, since every layout change is one more version the reader carries from then on. What alignment makes possible is mapping an index file and reading its offsets as a &[Offset] with no copy.\n\nThe layout today, with every position in bytes and c the record count:\n\n    region         starts at              size\n    header         0                      35\n    offsets        35                     16 per record\n    blob length    35 + 16c               8\n    name blob      43 + 16c               B\n    spans          43 + 16c + B           13 per record\n    ordered count  43 + 16c + B + 13c     8\n    by-name        51 + 16c + B + 13c     4 per named record\n\nThe header's 35 bytes are the magic (4), the version (1), the format (1), the source length (8), the source mtime as seconds (8) and nanoseconds (4), the record count (8) and the names flag (1).\n\nThree things break the alignment. The first is the one that matters, since it alone aligns the offsets; the other two decide whether the names layer can be mapped as well:\n\n1. The header is 35 bytes, so the first offset lands at 35. Pad it to 40.\n2. B is whatever the names happen to add up to. Pad the blob to a multiple of 8, leaving the recorded length the true one and letting the reader derive the padding from it, so the names still read without a second length.\n3. A span is 13 bytes: a present flag, a u64 start, a u32 length. Widen it to 16, ordered as the flag, three bytes of padding, the u32 length and then the u64 start, which puts start on its own boundary and the span after it on one too.\n\nThe by-name permutation is u32 per entry and stays where it is, since a 4-byte alignment follows from the three above.\n\nThe version byte at byte 4 holds VERSION = 1. It is what lets a later layout be told apart from this one and read anyway, so padding the header means VERSION = 2 plus a reader for the 35-byte header, and every .saidx on disk stays readable. A second byte fits inside the new padding if a major/minor split is ever wanted, and nothing needs one yet.\n\nWhat that costs is the reader arms. read_from and write_to walk the file in order, so the writer gains the padding and the reader has to skip it at a version that has it and not at one that does not. Index::open derives all four of its positions from HEADER, OFFSET and SPAN, so those become a function of the version rather than consts. Nothing in the public API moves.\n\nToday read_from and read_head reject any version but the current one, and the comment above VERSION gives that as the policy. That wants changing before a second version exists, and it is the first thing this work touches.",
   "type": "feature",
   "status": "open",
@@ -8,7 +8,7 @@
   "labels": [
     "libsail"
   ],
-  "parent": "sail-31fdd9",
+  "parent": null,
   "blocked_by": [
     "sail-f5a79d"
   ],
@@ -17,7 +17,7 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-09T21:28:01.744163559Z",
-  "updated_at": "2026-10-09T21:38:00.349661136Z",
+  "updated_at": "2026-10-13T01:51:48.478248037Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
