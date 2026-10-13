@@ -3,7 +3,7 @@
   "title": "sail count and sail names rescan the input when a current index is beside it",
   "body": "`sail count` and `sail names` on the indexed backend never read the `.saidx` beside the input. `count.rs` calls `Index::build` and `names.rs` calls `Index::build_named`, so each run scans the whole input even when a current index file sits beside it. The commands that read through `indexed!` go through `index_of` in `input.rs`, which reads a current index.\n\n`index::count_in` reads the count from the index header alone. A named index file carries the names, so `names` could read them without touching the data file.\n\nFound while writing the test for sail-33353c. Those two commands do not refuse a stale index, because they never look at one.",
   "type": "bug",
-  "status": "open",
+  "status": "in_progress",
   "priority": 3,
   "labels": [
     "sail"
@@ -11,11 +11,11 @@
   "parent": null,
   "blocked_by": [],
   "related": [],
-  "assignee": null,
-  "lease_expires": null,
+  "assignee": "Jack Roddy/424f83e5",
+  "lease_expires": "2026-10-13T22:45:30.808768687Z",
   "defer_until": null,
   "created_at": "2026-10-13T20:17:10.210370506Z",
-  "updated_at": "2026-10-13T20:17:10.210370506Z",
+  "updated_at": "2026-10-13T22:30:30.808768687Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
