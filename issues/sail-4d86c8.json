@@ -18,11 +18,20 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-13T20:42:12.686982814Z",
-  "updated_at": "2026-10-13T20:42:12.694594934Z",
+  "updated_at": "2026-10-13T20:43:11.870802335Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
-  "notes": [],
+  "notes": [
+    {
+      "id": "62a9372c",
+      "at": "2026-10-13T20:43:11.870801305Z",
+      "author": "Jack Roddy/424f83e5",
+      "text": "When this lands, drop 'No command reads an atlas yet.' from the `atlas` entry in `sail/CHANGELOG.md`, and describe reading an atlas in the README's 'reading large files' section.",
+      "commit": "7cd1e54",
+      "branch": "dev"
+    }
+  ],
   "stamps": {
     "created": {
       "commit": "7cd1e54",
