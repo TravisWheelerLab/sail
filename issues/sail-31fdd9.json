@@ -16,7 +16,7 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-09T21:28:01.711327875Z",
-  "updated_at": "2026-10-13T22:24:35.673056068Z",
+  "updated_at": "2026-10-13T22:24:35.681856211Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
@@ -38,6 +38,14 @@
       "commit": "473397a",
       "branch": "dev",
       "deleted_at": "2026-10-13T22:24:35.673055858Z"
+    },
+    {
+      "id": "0619fbf5",
+      "at": "2026-10-13T22:24:35.681855581Z",
+      "author": "Jack Roddy/424f83e5",
+      "text": "The atlas work lives on the `atlas` branch, per CLAUDE.md's Branches rule: `Atlas` and `sail atlas` are there, and sail-3a486e and sail-4d86c8 go there too. The branch merges into `dev` once the milestone is whole.",
+      "commit": "a52734c",
+      "branch": "dev"
     }
   ],
   "stamps": {
