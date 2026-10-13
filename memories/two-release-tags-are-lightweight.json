@@ -1,0 +1,10 @@
+{
+  "slug": "two-release-tags-are-lightweight",
+  "text": "libsail-v0.3.0 and sail-v0.2.1 are lightweight tags. They were left that way because the remote already had them. --follow-tags skips lightweight tags, which is how it surfaced. Check with git cat-file -t libsail-v0.3.0.",
+  "created_at": "2026-10-13T01:54:12.359386786Z",
+  "updated_at": "2026-10-13T01:54:12.359386786Z",
+  "stamp": {
+    "commit": "ab97b44",
+    "branch": "dev"
+  }
+}
