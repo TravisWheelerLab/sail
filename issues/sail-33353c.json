@@ -1,0 +1,30 @@
+{
+  "id": "sail-33353c",
+  "title": "A stale index beside an input is refused and named",
+  "body": "When `sail` reads an input through its index, `index_of` in `input.rs` checks `index::is_current`. If the `.saidx` beside the file is missing or stale, it builds a fresh `Index` in memory and writes nothing. `sail skim`'s `total()` falls back to a counting pass the same way. A stale index file therefore costs a full scan on every run, and nothing tells the user.\n\nsail-978552 decided that a stale part of an aggregate index is refused and named. This brings the single-file case in line.\n\n## Proposal\n\n- A `.saidx` that exists beside the input but does not describe it as it is now is an error that names the index file and says to run `sail index` again or delete it. `is_current` returns `false` for a stale stamp, an unreadable file and another version alike, so all three refuse.\n- A missing `.saidx` is unchanged. `--read auto` picks the indexed backend for positional and counted operations whether or not an index exists, and builds the offsets in memory when none does.\n- Only commands that would consult the index refuse. `--read stream` and `--read memory` never read it, except `sail skim`, whose streaming arm reads its count from a current index.\n\n## Cost\n\nA change to what `sail` does. A run that succeeded with a stale index now fails. It goes under `### Changed` in `sail`'s changelog. `libsail` does not change.",
+  "type": "feature",
+  "status": "open",
+  "priority": 2,
+  "labels": [
+    "sail"
+  ],
+  "parent": null,
+  "blocked_by": [],
+  "related": [],
+  "assignee": null,
+  "lease_expires": null,
+  "defer_until": null,
+  "created_at": "2026-10-13T20:16:08.268434359Z",
+  "updated_at": "2026-10-13T20:16:08.268434359Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
+  "notes": [],
+  "stamps": {
+    "created": {
+      "commit": "9e8285d",
+      "branch": "dev"
+    },
+    "closed": null
+  }
+}
