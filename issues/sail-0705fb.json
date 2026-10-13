@@ -18,7 +18,7 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-09T21:28:01.73339981Z",
-  "updated_at": "2026-10-13T22:24:35.625214019Z",
+  "updated_at": "2026-10-13T22:24:43.522085632Z",
   "closed_at": "2026-10-13T20:08:01.073481167Z",
   "close_reason": "Landed in 0455913 on dev. See the note before this one for the constructor change.",
   "resolution": "done",
@@ -53,9 +53,10 @@
       "id": "d9976cc5",
       "at": "2026-10-13T20:08:01.064413644Z",
       "author": "Jack Roddy/424f83e5",
-      "text": "Landed in 9e8285d on dev. The constructor is `Readers::new` and returns `Readers`, not `Result`, because it opens nothing. Jack approved the change in review.",
+      "text": "Landed in 0455913 on dev. The constructor is `Readers::new` and returns `Readers`, not `Result`, because it opens nothing. Jack approved the change in review.",
       "commit": "9e8285d",
-      "branch": "dev"
+      "branch": "dev",
+      "edited_at": "2026-10-13T22:24:43.522085342Z"
     }
   ],
   "stamps": {
