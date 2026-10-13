@@ -13,7 +13,7 @@ keywords = ["bioinformatics", "fasta", "stockholm", "p7hmm", "cli"]
 categories = ["command-line-utilities", "science"]
 
 [dependencies]
-libsail = { path = "../libsail", version = "0.4.0" }
+libsail = { path = "../libsail", version = "0.4.1" }
 anyhow = "1.0.99"
 clap = { version = "4.6.6", features = ["derive"] }
 regex = "1.11"

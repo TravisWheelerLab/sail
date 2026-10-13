@@ -9,6 +9,13 @@ cargo's reading of it below 1.0: the **minor** is the breaking axis, so 0.2 to
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-10-13
+
+A streaming `Reader` reports the index of the record it holds and can advance
+to a numbered one. `Readers` numbers the records of several files as one run.
+A caller drawing a sample over a stream no longer writes its own counting and
+position loops.
+
 ### Added
 
 - `index::Framed<S>`, a file and the offset of every record in it, with no
@@ -183,7 +190,8 @@ read one record at a time.
 First release: FASTA, Stockholm, HMMER3 p7hmm and the BLAST, HMMER and nail hit
 tables, with the `collection`, `parse` and `source` layers behind them.
 
-[Unreleased]: https://github.com/TravisWheelerLab/sail/compare/libsail-v0.4.0...HEAD
+[Unreleased]: https://github.com/TravisWheelerLab/sail/compare/libsail-v0.4.1...HEAD
+[0.4.1]: https://github.com/TravisWheelerLab/sail/compare/libsail-v0.4.0...libsail-v0.4.1
 [0.4.0]: https://github.com/TravisWheelerLab/sail/compare/libsail-v0.3.0...libsail-v0.4.0
 [0.3.0]: https://github.com/TravisWheelerLab/sail/compare/libsail-v0.2.0...libsail-v0.3.0
 [0.2.0]: https://github.com/TravisWheelerLab/sail/compare/libsail-v0.1.0...libsail-v0.2.0
