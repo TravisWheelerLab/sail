@@ -3,7 +3,7 @@
   "title": "Does the parts file hold the offsets inline, or point at per-file .saidx files?",
   "body": "1. Inline. One read opens the whole aggregate. One edited part rewrites all of it.\n2. By reference. Each part keeps its own `.saidx` and the parts file carries paths, stamps and counts alone. It stays small and a stale part rebuilds by itself. Cost: N + 1 files and N opens.\n\nLean: by reference. The case for inline is the one to make if opening a thousand files turns out to cost more than rebuilding them.\n\nThe type's name follows from the answer: a type that only points at per-file indexes should not be named as if it held offsets.",
   "type": "decision",
-  "status": "open",
+  "status": "closed",
   "priority": 3,
   "labels": [
     "libsail"
@@ -15,16 +15,19 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-09T21:28:01.78676153Z",
-  "updated_at": "2026-10-13T02:04:06.538836693Z",
-  "closed_at": null,
-  "close_reason": null,
-  "resolution": null,
+  "updated_at": "2026-10-13T20:14:18.203478126Z",
+  "closed_at": "2026-10-13T20:14:18.203478126Z",
+  "close_reason": "Decided by Jack: by reference. Each part keeps its own .saidx, and the parts file carries paths, stamps and counts. A part's .saidx stays usable on its own without the parts file.",
+  "resolution": "done",
   "notes": [],
   "stamps": {
     "created": {
       "commit": "06334a4",
       "branch": "main"
     },
-    "closed": null
+    "closed": {
+      "commit": "9e8285d",
+      "branch": "dev"
+    }
   }
 }
