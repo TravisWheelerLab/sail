@@ -1,7 +1,7 @@
 {
   "id": "sail-31fdd9",
   "title": "One index file over several data files",
-  "body": "Index describes one file. Index::write stamps that file's length and mtime, and is_current re-stats one data path against one index path. Aggregate<IndexedFasta> puts several indexed files in one numbering, but nothing on disk records which files or in which order, so the numbering exists only in the call that built it, and a stale part is rebuilt in memory without a word.\n\nThis milestone gives an aggregate a file of its own: an ordered list of the parts, with a stamp and a record count each, so the total and each part's first position come from one read, and a changed part can be named. sail index gains several inputs and an explicit -o to write one.\n\nEight-byte alignment of the .saidx layout is here as well. Its purpose is unrelated, but it changes the bytes on disk, and if the list file does too the two want one version bump rather than two. Whether the list file touches the .saidx layout is sail-9d931d.\n\nStreaming is not part of this. Reader counting and seeking (sail-317db4) stands alone. A Reader over several files (sail-0705fb) is the one issue that needs both this work and streaming, and it waits on each separately.",
+  "body": "An Index describes one file. Index::write stamps that file's length and mtime into the header. The free function is_current re-stats one data path against one index path. Aggregate<IndexedFasta> numbers several indexed files as one range. Nothing on disk records which files were aggregated or in which order. The numbering exists only in the call that built it. When one part's index is stale, sail rebuilds it in memory and says nothing.\n\nThis milestone adds a file for the aggregate: an ordered list of the parts with a stamp and a record count for each. One read of it gives the total and each part's first position. sail can name a changed part. sail index gains several inputs and an explicit -o to write one.\n\nThe pieces:\n\n- sail-9d931d decides whether the file holds offsets or points at per-file .saidx files.\n- sail-978552 decides what a stale part does.\n- sail-f5a79d decides whether the file shares a version bump with the alignment work in sail-bb932e. It dissolves if sail-9d931d goes by reference, because the file then never touches the .saidx layout.\n- sail-a59d6f is the type and its file.\n- sail-2413e6 is the sail index command.\n\nAlignment of the .saidx layout (sail-bb932e) left this milestone. It can be explained without the list file.",
   "type": "milestone",
   "status": "open",
   "priority": 2,
@@ -16,7 +16,7 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-09T21:28:01.711327875Z",
-  "updated_at": "2026-10-13T01:51:48.454746591Z",
+  "updated_at": "2026-10-13T01:53:31.6429766Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
