@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::path::PathBuf;
 
 use anyhow::{Context, Result, bail};
@@ -88,22 +89,25 @@ impl GetArgs {
                 let last = wanted.iter().map(|&(_, last)| last).max().unwrap_or(0);
                 let mut held: Vec<Option<Vec<u8>>> = vec![None; last];
 
-                let mut reader = Reader::new(entry.reader()?, inputs.format());
-                let mut n = 0;
+                // ascending and without repeats, the order
+                // advance_to needs
+                let positions: BTreeSet<usize> = wanted
+                    .iter()
+                    .flat_map(|&(first, last)| first - 1..last)
+                    .collect();
 
-                while n < last && reader.advance()? {
-                    // only the positions asked for are kept,
-                    // so this is O(what was asked) and not
-                    // O(how far into the file it sits)
-                    if wanted.iter().any(|&(f, l)| n + 1 >= f && n < l) {
-                        held[n] = Some(reader.record().to_vec());
+                let mut reader = Reader::new(entry.reader()?, inputs.format());
+
+                for &at in &positions {
+                    if !reader.advance_to(at)? {
+                        // a reader past the end keeps its last
+                        // record current, so this is the count
+                        let n = reader.position().map_or(0, |at| at + 1);
+
+                        bail!("position {last} was asked for and the input holds {n} records")
                     }
 
-                    n += 1;
-                }
-
-                if n < last {
-                    bail!("position {last} was asked for and the input holds {n} records")
+                    held[at] = Some(reader.record().to_vec());
                 }
 
                 let mut out = out;
