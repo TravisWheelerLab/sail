@@ -1,7 +1,7 @@
 {
   "id": "sail-31fdd9",
   "title": "One index file over several data files",
-  "body": "An `Index` describes one file. `Index::write` stamps that file's length and mtime into the header. The free function `is_current` re-stats one data path against one index path. `Aggregate<IndexedFasta>` numbers several indexed files as one range. Nothing on disk records which files were aggregated or in which order. The numbering exists only in the call that built it. When one part's index is stale, `sail` rebuilds it in memory and says nothing.\n\nThis milestone adds a file for the aggregate: an ordered list of the parts with a stamp and a record count for each. One read of it gives the total and each part's first position. `sail` can name a changed part. `sail index` gains several inputs and an explicit `-o` to write one.\n\nThe pieces:\n\n- sail-9d931d decides whether the file holds offsets or points at per-file `.saidx` files.\n- sail-978552 decides what a stale part does.\n- sail-f5a79d decides whether the file shares a version bump with the alignment work in sail-bb932e. It dissolves if sail-9d931d goes by reference, because the file then never touches the `.saidx` layout.\n- sail-a59d6f is the type and its file.\n- sail-2413e6 is the `sail index` command.\n\nAlignment of the `.saidx` layout (sail-bb932e) left this milestone. It can be explained without the parts file.",
+  "body": "An `Index` describes one file. `Index::write` stamps that file's length and mtime into the header, and the free function `is_current` re-stats one data path against one index path. `Aggregate<IndexedFasta>` numbers several indexed files as one range. Nothing on disk records which files were aggregated or in which order. The numbering exists only in the call that built it.\n\nThis milestone adds an atlas: a `.satlas` file listing the parts in order, with a stamp and a record count for each, pointing at each part's own `.saidx`. One read of it gives the total and each part's first position. `sail index` stays the command for one file. `sail atlas` writes an atlas over several, and every subcommand reads an atlas as one input.\n\nThe pieces:\n\n- sail-9d931d decided the atlas points at per-file `.saidx` files.\n- sail-978552 decided a stale part is refused and named.\n- sail-f5a79d dissolved once the atlas became its own file.\n- sail-a59d6f is `libsail::atlas::Atlas` and its file.\n- sail-2413e6 is the `sail atlas` command.\n- sail-3a486e decides how `Readers` and `Aggregate` are built from an atlas.\n- sail-4d86c8 has every subcommand read an atlas as one input.\n\nAlignment of the `.saidx` layout (sail-bb932e) left this milestone. It can be explained without the atlas.",
   "type": "milestone",
   "status": "open",
   "priority": 2,
@@ -16,7 +16,7 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-09T21:28:01.711327875Z",
-  "updated_at": "2026-10-13T02:05:01.758384441Z",
+  "updated_at": "2026-10-13T20:42:19.791476161Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
