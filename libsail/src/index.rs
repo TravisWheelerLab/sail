@@ -1839,6 +1839,11 @@ pub struct Reader<R: Read> {
     // reason: it stands in for the line ending before byte
     // 0, so a file opening with a delimiter needs no first
     // round special case
+    //
+    // **note: the sentinel is per stream, not per file. a
+    //         Read::chain of two files loses the second
+    //         file's first record when the first file has no
+    //         final newline. Readers frames each file apart
     buf: Vec<u8>,
     filled: usize,
     base: u64,
