@@ -5,6 +5,7 @@ use clap::Args;
 use libsail::collection::{Indexable, Iterable};
 
 use crate::cli::FormatArg;
+use crate::commands::default_seed;
 use crate::input::{Inputs, dispatch};
 use crate::output::{emit, writer};
 
@@ -36,7 +37,7 @@ impl ShuffleArgs {
         // an unseeded run picks a seed rather than taking a
         // second code path: libsail has one permutation and
         // it is the reproducible one
-        let seed = self.seed.unwrap_or_else(rand::random);
+        let seed = self.seed.unwrap_or_else(default_seed);
 
         dispatch!(inputs.format(), entry, |collection, _size, _name, write| {
             emit(collection.permute(seed).iter(), write, out)

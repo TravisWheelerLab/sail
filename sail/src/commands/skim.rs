@@ -9,7 +9,7 @@ use libsail::index::Reader;
 use libsail::select::Selection;
 
 use crate::cli::{FormatArg, ReadArgs};
-use crate::commands::draw_size;
+use crate::commands::{default_seed, draw_size};
 use crate::input::{Backend, Input, Inputs, Needs, current_index, dispatch, indexed, indexed_path};
 use crate::output::{emit, write_framed, writer};
 
@@ -58,7 +58,7 @@ impl SkimArgs {
         // an unseeded run picks a seed rather than taking a
         // second code path: a draw that ends up in a paper
         // has to reproduce, and libsail has one draw
-        let seed = self.seed.unwrap_or_else(rand::random);
+        let seed = self.seed.unwrap_or_else(default_seed);
 
         match inputs.backend() {
             Backend::Stream => {

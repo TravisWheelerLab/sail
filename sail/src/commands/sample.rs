@@ -5,7 +5,7 @@ use clap::Args;
 use libsail::collection::{Indexable, Iterable};
 
 use crate::cli::FormatArg;
-use crate::commands::draw_size;
+use crate::commands::{default_seed, draw_size};
 use crate::input::{Inputs, dispatch};
 use crate::output::{emit, writer};
 
@@ -46,7 +46,7 @@ impl SampleArgs {
         // an unseeded run picks a seed rather than taking a
         // second code path: a draw that ends up in a paper
         // has to reproduce, and libsail has one draw
-        let seed = self.seed.unwrap_or_else(rand::random);
+        let seed = self.seed.unwrap_or_else(default_seed);
 
         dispatch!(inputs.format(), entry, |collection, _size, _name, write| {
             let n = draw_size(count, fraction, collection.len())?;

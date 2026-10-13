@@ -19,6 +19,8 @@ pub mod stats;
 pub mod tail;
 pub mod validate;
 
+use std::hash::{BuildHasher, Hasher, RandomState};
+
 use anyhow::{Result, bail};
 
 /// How many records to draw, from `-n` or from `-p`.
@@ -26,8 +28,8 @@ pub(crate) fn draw_size(count: Option<usize>, fraction: Option<f64>, len: usize)
     match (count, fraction) {
         (Some(n), _) => {
             // sampling without replacement cannot return more
-            // records than there are, and the rand routine
-            // panics rather than clamping -- so the error is
+            // records than there are, and Selection::new and
+            // sample assert rather than clamp -- so the error is
             // raised here, naming both numbers
             if n > len {
                 bail!("{n} records were asked for and the input holds {len}")
@@ -50,14 +52,24 @@ pub(crate) fn draw_size(count: Option<usize>, fraction: Option<f64>, len: usize)
     }
 }
 
+/// A seed for a run given no `--seed`, different on every run.
+pub(crate) fn default_seed() -> u64 {
+    // std has no stable random number API. RandomState's
+    // keys come from the OS's randomness, and hashing
+    // nothing with them yields a fresh u64. nothing here
+    // needs more than that: an unseeded draw is not meant
+    // to reproduce
+    RandomState::new().build_hasher().finish()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn drawing_more_records_than_there_are_is_an_error_and_not_a_clamp() {
-        // the rand routine panics rather than clamping, so
-        // this has to be caught before it is reached
+        // libsail's draws assert rather than clamp, so this
+        // has to be caught before one is reached
         assert!(draw_size(Some(6), None, 5).is_err());
         assert_eq!(draw_size(Some(5), None, 5).unwrap(), 5);
     }
