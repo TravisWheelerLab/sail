@@ -3,7 +3,7 @@
   "title": "A Reader keeps its last record after advance returns false",
   "body": "`Reader::advance` returning `false` leaves the reader past the end of the stream. sail-317db4 settled that `position()` then returns `None` and `record()` returns an empty slice. That rule was chosen to ship `advance_to`, and it is open for refinement here.\n\nBefore sail-317db4, `record()` after `false` sliced a buffer whose bytes had moved in Stockholm and HMM. The final `advance` calls `fill`, `fill` drops every byte before `cursor`, and the last record lies wholly before `cursor`. FASTA was not affected, because its `advance` sets `done` while framing the last record and returns `false` on the next call without a `fill`.\n\nNo loop in `sail` reads `record()` after `false`. `advance_to(n)` with `n` past the end is the first call that leaves a caller holding a reader in that state. Such a caller may want the record where the stream ended.\n\n## Options\n\n| option | `position()` after `false` | `record()` after `false` | cost |\n|---|---|---|---|\n| none, as shipped | `None` | empty | one reset in `advance` |\n| keep last | `Some(last)` | the last record | `fill` must keep the current record's bytes until the next record is framed |\n\nNo lean yet. The question for keep last is whether `fill` can keep the current record without copying it.\n\n`lines::Rows` compacts the same way in its own `fill` and follows whichever rule this picks.",
   "type": "feature",
-  "status": "open",
+  "status": "in_progress",
   "priority": 2,
   "labels": [
     "libsail"
@@ -11,11 +11,11 @@
   "parent": null,
   "blocked_by": [],
   "related": [],
-  "assignee": null,
-  "lease_expires": null,
+  "assignee": "Jack Roddy/424f83e5",
+  "lease_expires": "2026-10-13T22:43:26.030113586Z",
   "defer_until": null,
   "created_at": "2026-10-13T19:13:49.589387838Z",
-  "updated_at": "2026-10-13T21:46:22.250551093Z",
+  "updated_at": "2026-10-13T22:28:26.030113586Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
