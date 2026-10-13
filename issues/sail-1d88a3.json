@@ -1,7 +1,7 @@
 {
   "id": "sail-1d88a3",
   "title": "sail could draw its default seed from std instead of rand",
-  "body": "sail depends on rand for one u64, drawn when --seed is absent, in shuffle, sample and skim. std::hash::RandomState would cover that call. Dropping rand removes its dependency tree from sail's build.",
+  "body": "`sail` depends on `rand` for one `u64`, drawn when `--seed` is absent, in `shuffle`, `sample` and `skim`. `std::hash::RandomState` would cover that call. Dropping `rand` removes its dependency tree from `sail`'s build.",
   "type": "chore",
   "status": "open",
   "priority": 4,
@@ -15,7 +15,7 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-13T01:54:12.407939568Z",
-  "updated_at": "2026-10-13T01:54:12.407939568Z",
+  "updated_at": "2026-10-13T02:05:01.828120273Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
