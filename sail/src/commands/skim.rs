@@ -10,7 +10,7 @@ use libsail::select::Selection;
 
 use crate::cli::{FormatArg, ReadArgs};
 use crate::commands::draw_size;
-use crate::input::{Backend, Input, Inputs, Needs, dispatch, indexed, indexed_path};
+use crate::input::{Backend, Input, Inputs, Needs, current_index, dispatch, indexed, indexed_path};
 use crate::output::{emit, write_framed, writer};
 
 #[derive(Args)]
@@ -119,12 +119,10 @@ impl SkimArgs {
 // header where the pass reads the file. `sail index` first
 // is what turns two passes into one
 fn total(entry: &Input, format: Format) -> Result<usize> {
-    if let Some(path) = entry.path() {
-        let at = libsail::index::path_for(path);
-
-        if libsail::index::is_current(&at, path)? {
-            return Ok(libsail::index::count_in(&at)?);
-        }
+    if let Some(path) = entry.path()
+        && let Some(at) = current_index(path)?
+    {
+        return Ok(libsail::index::count_in(&at)?);
     }
 
     Ok(libsail::index::count(entry.reader()?, format)?)

@@ -392,22 +392,43 @@ macro_rules! dispatch {
 
 pub(crate) use dispatch;
 
-/// The index for `path`, read from the file beside it when one is there and
-/// still describes it, and scanned for when it is not.
+/// The index file beside `path` when it describes `path` as it is now, and
+/// `None` when there is none. One that is there and out of date is an error.
+pub(crate) fn current_index(path: &Path) -> Result<Option<PathBuf>> {
+    let at = libsail::index::path_for(path);
+
+    if libsail::index::is_current(&at, path)? {
+        return Ok(Some(at));
+    }
+
+    // is_current returns false for a missing index too, and
+    // only a missing one is scanned past without an error
+    if at.exists() {
+        bail!(
+            "the index at {} does not describe {} as it is now: run `sail index {}` again, \
+             or delete the index",
+            at.display(),
+            path.display(),
+            path.display()
+        );
+    }
+
+    Ok(None)
+}
+
+/// The index for `path`, read from the file beside it when one is there, and
+/// scanned for when there is none.
 ///
 /// Read whole rather than left in place: several operations here walk every
 /// record, and those would otherwise pay a read per offset on top of the read
 /// per record.
 pub(crate) fn index_of(path: &Path, format: Format) -> Result<libsail::index::Index> {
-    let at = libsail::index::path_for(path);
-
-    if libsail::index::is_current(&at, path)? {
+    if let Some(at) = current_index(path)? {
         return libsail::index::Index::read(&at)
             .with_context(|| format!("failed to read the index at {}", at.display()));
     }
 
-    // no index, or one of the file as it used to be. the
-    // scan is what `sail index` would have written
+    // the scan is what `sail index` would have written
     Ok(libsail::index::Index::build(File::open(path)?, format)?)
 }
 

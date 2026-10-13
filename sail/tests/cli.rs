@@ -475,9 +475,10 @@ fn a_saved_index_changes_nothing_a_command_writes() {
 }
 
 #[test]
-fn an_index_of_the_file_as_it_was_is_ignored_rather_than_trusted() {
+fn an_index_of_the_file_as_it_was_is_refused_and_named() {
     let s = Scratch::new("stale");
     let path = s.write("in.fa", b">a\nAAAA\n>b\nCCCC\n");
+    let index = format!("{path}.saidx");
 
     assert!(sail(&["index", &path], b"").ok);
 
@@ -485,13 +486,29 @@ fn an_index_of_the_file_as_it_was_is_ignored_rather_than_trusted() {
     // only thing that moved, and a different one moves both
     std::fs::write(&path, b">a\nAAAA\n>b\nCCCC\n>c\nGGGG\n").unwrap();
 
-    let run = sail(&["names", &path, "--read", "indexed"], b"");
+    // auto picks the indexed backend for get, and skim's
+    // streaming arm reads its count from the index
+    for argv in [
+        &["cat", &path, "--read", "indexed"][..],
+        &["get", &path, "3"],
+        &["skim", &path, "-n", "1", "--seed", "7", "--read", "stream"],
+    ] {
+        let run = sail(argv, b"");
+
+        assert!(!run.ok, "{argv:?} used the stale index");
+        assert!(run.stdout.is_empty(), "{argv:?} wrote before refusing");
+        assert!(
+            run.stderr.contains(&index) && run.stderr.contains("sail index"),
+            "{argv:?} did not name the index: {}",
+            run.stderr
+        );
+    }
+
+    std::fs::remove_file(&index).unwrap();
+
+    let run = sail(&["get", &path, "3"], b"");
     assert!(run.ok, "{}", run.stderr);
-    assert_eq!(
-        String::from_utf8_lossy(&run.stdout),
-        "a\nb\nc\n",
-        "the third record is missing, so the old index was used"
-    );
+    assert_eq!(String::from_utf8_lossy(&run.stdout), ">c\nGGGG\n");
 }
 
 #[test]

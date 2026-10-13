@@ -10,6 +10,13 @@ underneath, so `sail` and `libsail` move independently.
 
 ## [Unreleased]
 
+### Changed
+
+- A `.saidx` beside an input that no longer describes it is an error naming the
+  index, where it used to be passed over with a full scan of the input on
+  every run. Run `sail index` again or delete the index. A missing index is
+  unchanged: the commands that use one build the offsets in memory.
+
 ## [0.3.0] - 2026-09-16
 
 ### Added
