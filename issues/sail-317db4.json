@@ -15,7 +15,7 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-09T21:28:01.722959268Z",
-  "updated_at": "2026-10-13T02:05:01.842988045Z",
+  "updated_at": "2026-10-13T02:05:01.850452901Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
@@ -42,9 +42,10 @@
       "id": "307c6a91",
       "at": "2026-10-09T21:28:01.891545344Z",
       "author": "Jack Roddy/d58bf845",
-      "text": "advance_to asked to go backwards panics: the caller broke the contract, same argument as Indexable::get's invariant.",
+      "text": "`advance_to` asked to go backwards panics: the caller broke the contract, the same argument as `Indexable::get`'s invariant.",
       "commit": "06334a4",
-      "branch": "main"
+      "branch": "main",
+      "edited_at": "2026-10-13T02:05:01.850452671Z"
     },
     {
       "id": "acdde8d3",
