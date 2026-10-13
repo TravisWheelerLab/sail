@@ -3,7 +3,7 @@
   "title": "What does a stale part of an aggregate index do?",
   "body": "Today, when `is_current` says the index beside an input is stale, `sail`'s `index_of` in `input.rs` builds a fresh `Index` in memory and writes nothing to disk. It prints nothing and raises no error.\n\nFor an aggregate:\n\n1. Rebuild the stale part in memory, as today for one file. Cost: one edit to one of a thousand files triggers a scan the caller never asked for and never sees.\n2. Refuse and name the part. Cost: the caller runs `sail index` again before the command works.\n\nLean: refuse and name the part. `libsail` reports stale parts as positions and `sail` decides what to do. The one-file behaviour deserves the same question in its own issue.",
   "type": "decision",
-  "status": "open",
+  "status": "closed",
   "priority": 3,
   "labels": [
     "libsail"
@@ -15,16 +15,19 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-09T21:28:01.797562819Z",
-  "updated_at": "2026-10-13T02:05:01.798237239Z",
-  "closed_at": null,
-  "close_reason": null,
-  "resolution": null,
+  "updated_at": "2026-10-13T20:14:18.211985935Z",
+  "closed_at": "2026-10-13T20:14:18.211985935Z",
+  "close_reason": "Decided by Jack: refuse and name the part. libsail reports stale parts by position, and sail decides what to do.",
+  "resolution": "done",
   "notes": [],
   "stamps": {
     "created": {
       "commit": "06334a4",
       "branch": "main"
     },
-    "closed": null
+    "closed": {
+      "commit": "9e8285d",
+      "branch": "dev"
+    }
   }
 }
