@@ -20,10 +20,11 @@ cargo's reading of it below 1.0: the **minor** is the breaking axis, so 0.2 to
 - `index::count(bytes, format)`, the number of records in a stream, by one pass
   over it.
 - `Reader::position()` and `Reader::advance_to(n)`. `position()` is the index of
-  the record `record()` returns. It is `None` before the first `advance` and
-  after one returns `false`. `advance_to(n)` advances until record `n` is
-  current, and panics if record `n` is already behind the reader. `lines::Rows`
-  gains the same two methods, counting rows.
+  the record `record()` returns, and `None` before the first `advance`. An
+  advance that returns `false` leaves the last record current, so
+  `position() + 1` is then the record count. `advance_to(n)` advances until
+  record `n` is current, and panics if record `n` is already behind the reader.
+  `lines::Rows` gains the same two methods, counting rows.
 - `index::Readers`, which reads several files as one run of records with one
   `position()`. Each file gets its own `Reader`, so a file without a final
   newline cannot swallow the first record of the next file as `Read::chain`
@@ -32,9 +33,9 @@ cargo's reading of it below 1.0: the **minor** is the breaking axis, so 0.2 to
 
 ### Changed
 
-- `Reader::record()` and `Rows::row()` are empty after `advance` returns
-  `false`. On Stockholm and HMM, `Reader::record()` used to return bytes that
-  the final refill had already moved.
+- `Reader::record()` and `Rows::row()` still return the last record after
+  `advance` returns `false`. On Stockholm and HMM, `Reader::record()` used to
+  return bytes that the final refill had already moved.
 - `IndexedFasta`, `IndexedStockholm` and `IndexedHmm` each hold a `Framed<S>`
   and forward `index`, `name_index` and `record` to it, where each used to
   carry its own copy of the source and the index. No signature moved.

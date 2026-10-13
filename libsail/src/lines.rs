@@ -112,13 +112,15 @@ impl<R: Read> Rows<R> {
     }
 
     /// The current row's bytes, with no line ending. Empty before the first
-    /// [`advance`](Self::advance) and after one returns `false`.
+    /// [`advance`](Self::advance). An advance that returns `false` leaves the
+    /// last row current.
     pub fn row(&self) -> &[u8] {
         &self.buf[self.start..self.start + self.len]
     }
 
     /// The index of the current row, counting rows and not lines; `None` before
-    /// the first [`advance`](Self::advance) and after one returns `false`.
+    /// the first [`advance`](Self::advance). An advance that returns `false`
+    /// leaves the last row current, so `position() + 1` is then the row count.
     pub fn position(&self) -> Option<usize> {
         self.position
     }
@@ -145,23 +147,17 @@ impl<R: Read> Rows<R> {
         if more {
             self.position = Some(self.framed);
             self.framed += 1;
-        } else {
-            // the last fill may have compacted the previous
-            // row's bytes away, so start no longer points at
-            // them
-            self.position = None;
-            self.len = 0;
         }
 
         Ok(more)
     }
 
-    /// Advance until row `n` is current. `false` if the stream ends first.
+    /// Advance until row `n` is current. `false` if the stream ends first, with
+    /// the last row left current.
     ///
     /// # Panics
     ///
-    /// If row `n` is behind the current one, or behind the end of a stream
-    /// already reached.
+    /// If row `n` is behind the current one.
     pub fn advance_to(&mut self, n: usize) -> Result<bool> {
         let floor = self.position.unwrap_or(self.framed);
         assert!(n >= floor, "advance_to({n}) is behind row {floor}");
@@ -243,11 +239,22 @@ impl<R: Read> Rows<R> {
             return Ok(());
         }
 
-        if self.cursor > 0 {
-            self.buf.copy_within(self.cursor..self.filled, 0);
-            self.filled -= self.cursor;
-            self.base += self.cursor as u64;
-            self.cursor = 0;
+        // the current row stays readable until the next one
+        // replaces it, so compaction keeps it
+        let keep = match self.position {
+            Some(_) => self.start,
+            None => self.cursor,
+        };
+
+        if keep > 0 {
+            self.buf.copy_within(keep..self.filled, 0);
+            self.filled -= keep;
+            self.base += keep as u64;
+            self.cursor -= keep;
+
+            if self.position.is_some() {
+                self.start -= keep;
+            }
         } else if self.filled == self.buf.len() {
             // a line longer than the buffer, so compacting
             // frees nothing. growing keeps a line spanning k
@@ -664,8 +671,8 @@ mod tests {
         assert_eq!((rows.position(), rows.line()), (Some(1), 5));
 
         assert!(!rows.advance().unwrap());
-        assert_eq!(rows.position(), None);
-        assert!(rows.row().is_empty());
+        assert_eq!(rows.position(), Some(1));
+        assert_eq!(rows.row(), b"b 2");
     }
 
     #[test]
@@ -682,7 +689,8 @@ mod tests {
             }
 
             assert!(!rows.advance_to(4).unwrap());
-            assert_eq!(rows.position(), None);
+            assert_eq!(rows.position(), Some(3));
+            assert_eq!(rows.row(), b"d");
         }
     }
 

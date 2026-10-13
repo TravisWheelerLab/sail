@@ -1928,14 +1928,15 @@ impl<R: Read> Reader<R> {
         self.format
     }
 
-    /// The current record's bytes; empty before the first [`advance`](Self::advance)
-    /// and after one returns `false`.
+    /// The current record's bytes; empty before the first [`advance`](Self::advance).
+    /// An advance that returns `false` leaves the last record current.
     pub fn record(&self) -> &[u8] {
         &self.buf[self.start..self.start + self.len]
     }
 
     /// The index of the current record; `None` before the first
-    /// [`advance`](Self::advance) and after one returns `false`.
+    /// [`advance`](Self::advance). An advance that returns `false` leaves the
+    /// last record current, so `position() + 1` is then the record count.
     pub fn position(&self) -> Option<usize> {
         self.position
     }
@@ -1959,23 +1960,17 @@ impl<R: Read> Reader<R> {
         if more {
             self.position = Some(self.framed);
             self.framed += 1;
-        } else {
-            // the last fill may have compacted the previous
-            // record's bytes away, so start no longer points
-            // at them
-            self.position = None;
-            self.len = 0;
         }
 
         Ok(more)
     }
 
-    /// Advance until record `n` is current. `false` if the stream ends first.
+    /// Advance until record `n` is current. `false` if the stream ends first,
+    /// with the last record left current.
     ///
     /// # Panics
     ///
-    /// If record `n` is behind the current one, or behind the end of a stream
-    /// already reached.
+    /// If record `n` is behind the current one.
     pub fn advance_to(&mut self, n: usize) -> Result<bool> {
         let floor = self.position.unwrap_or(self.framed);
         assert!(n >= floor, "advance_to({n}) is behind record {floor}");
@@ -2094,14 +2089,24 @@ impl<R: Read> Reader<R> {
         }
 
         // everything before the byte the cursor anchors on is
-        // spent, so it is what compaction drops
-        let spent = self.cursor - 1;
+        // spent, except the current record, which stays
+        // readable until the next one replaces it. the buffer
+        // can then hold two records rather than one
+        let keep = match self.position {
+            Some(_) => self.start,
+            None => self.cursor,
+        };
+        let spent = keep - 1;
 
         if spent > 0 {
             self.buf.copy_within(spent..self.filled, 0);
             self.filled -= spent;
             self.base += spent as u64;
-            self.cursor = 1;
+            self.cursor -= spent;
+
+            if self.position.is_some() {
+                self.start -= spent;
+            }
         } else if self.filled == self.buf.len() {
             // the record is longer than the buffer, so
             // compacting frees nothing. growing here is what
@@ -2147,6 +2152,9 @@ pub struct Readers {
     current: Option<Reader<File>>,
     part: usize,
 
+    /// The reader that framed the current record, once its path has run out.
+    held: Option<Reader<File>>,
+
     /// The index of `paths[part]`'s first record.
     base: usize,
 
@@ -2167,6 +2175,7 @@ impl Readers {
             counts: None,
             current: None,
             part: 0,
+            held: None,
             base: 0,
             position: None,
         }
@@ -2189,17 +2198,21 @@ impl Readers {
         Ok(self.counts.as_deref().unwrap_or_default().iter().sum())
     }
 
-    /// The current record's bytes; empty before the first [`advance`](Self::advance)
-    /// and after one returns `false`.
+    /// The current record's bytes; empty before the first [`advance`](Self::advance).
+    /// An advance that returns `false` leaves the last record framed current.
     pub fn record(&self) -> &[u8] {
-        match &self.current {
-            Some(reader) => reader.record(),
-            None => &[],
-        }
+        let holder = match &self.current {
+            Some(reader) if reader.position().is_some() => Some(reader),
+            _ => self.held.as_ref(),
+        };
+
+        holder.map_or(&[], Reader::record)
     }
 
     /// The index of the current record across every path; `None` before the
-    /// first [`advance`](Self::advance) and after one returns `false`.
+    /// first [`advance`](Self::advance). An advance that returns `false` leaves
+    /// the last record framed current. That is the last record overall unless
+    /// [`advance_to`](Self::advance_to) skipped counted files to get there.
     pub fn position(&self) -> Option<usize> {
         self.position
     }
@@ -2210,13 +2223,12 @@ impl Readers {
             self.open()?;
 
             let Some(reader) = self.current.as_mut() else {
-                self.position = None;
-
                 return Ok(false);
             };
 
             if reader.advance()? {
                 self.position = reader.position().map(|at| self.base + at);
+                self.held = None;
 
                 return Ok(true);
             }
@@ -2225,39 +2237,37 @@ impl Readers {
         }
     }
 
-    /// Advance until record `n` is current. `false` if the paths run out first.
+    /// Advance until record `n` is current. `false` if the paths run out first,
+    /// with the last record framed left current.
     ///
     /// # Panics
     ///
-    /// If record `n` is behind the current one, or behind the end of the paths
-    /// already reached.
+    /// If record `n` is behind the current one.
     pub fn advance_to(&mut self, n: usize) -> Result<bool> {
-        let floor = self.position.unwrap_or_else(|| self.framed());
+        let floor = self.position.unwrap_or(0);
         assert!(n >= floor, "advance_to({n}) is behind record {floor}");
+
+        if self.position == Some(n) {
+            return Ok(true);
+        }
 
         loop {
             self.skip_to(n);
             self.open()?;
 
             let Some(reader) = self.current.as_mut() else {
-                self.position = None;
-
                 return Ok(false);
             };
 
             if reader.advance_to(n - self.base)? {
                 self.position = Some(n);
+                self.held = None;
 
                 return Ok(true);
             }
 
             self.close();
         }
-    }
-
-    /// How many records have been framed across every path.
-    fn framed(&self) -> usize {
-        self.base + self.current.as_ref().map_or(0, |reader| reader.framed)
     }
 
     /// Open `paths[part]` if no reader is open and a path remains.
@@ -2272,7 +2282,11 @@ impl Readers {
 
     /// Move past `paths[part]` once its reader has run out.
     fn close(&mut self) {
-        self.base += self.current.take().map_or(0, |reader| reader.framed);
+        if let Some(reader) = self.current.take() {
+            self.base += reader.framed;
+            retire(reader, &mut self.held);
+        }
+
         self.part += 1;
     }
 
@@ -2284,10 +2298,21 @@ impl Readers {
         };
 
         while self.part < counts.len() && self.base + counts[self.part] <= n {
+            if let Some(reader) = self.current.take() {
+                retire(reader, &mut self.held);
+            }
+
             self.base += counts[self.part];
             self.part += 1;
-            self.current = None;
         }
+    }
+}
+
+/// Keep `reader` in `held` if it framed any record, since the last record
+/// framed is the current one.
+fn retire(reader: Reader<File>, held: &mut Option<Reader<File>>) {
+    if reader.position().is_some() {
+        *held = Some(reader);
     }
 }
 
@@ -2458,7 +2483,8 @@ mod reader_tests {
                 }
 
                 assert_eq!(n, want.len(), "{path} at chunk {chunk}");
-                assert_eq!(reader.position(), None, "{path} past the end");
+                assert_eq!(reader.position(), Some(n - 1), "{path} past the end");
+                assert_eq!(reader.record(), want[n - 1].1, "{path} past the end");
             }
         }
     }
@@ -2486,18 +2512,30 @@ mod reader_tests {
     }
 
     #[test]
-    fn advance_to_past_the_end_holds_nothing() {
+    fn advance_to_past_the_end_leaves_the_last_record_current() {
         for (path, format) in FIXTURES {
             let bytes = std::fs::read(path).unwrap();
-            let held = indexed(&bytes, format).len();
+            let want = indexed(&bytes, format);
+            let held = want.len();
             let mut reader = Reader::with_chunk(&bytes[..], format, 7);
 
             assert!(!reader.advance_to(held).unwrap(), "{path}");
-            assert_eq!(reader.position(), None, "{path}");
-            assert!(reader.record().is_empty(), "{path}");
+            assert_eq!(reader.position(), Some(held - 1), "{path}");
+            assert_eq!(reader.record(), want[held - 1].1, "{path}");
+            assert_eq!(reader.offset(), want[held - 1].0, "{path}");
 
             assert!(!reader.advance_to(held + 10).unwrap(), "{path} once more");
+            assert!(reader.advance_to(held - 1).unwrap(), "{path} the last");
         }
+    }
+
+    #[test]
+    fn an_empty_stream_has_no_current_record_after_the_end() {
+        let mut reader = Reader::new(&b""[..], Format::Fasta);
+
+        assert!(!reader.advance().unwrap());
+        assert_eq!(reader.position(), None);
+        assert!(reader.record().is_empty());
     }
 
     #[test]
@@ -2511,16 +2549,19 @@ mod reader_tests {
     }
 
     #[test]
-    fn a_reader_past_the_end_of_a_terminating_format_holds_no_stale_bytes() {
+    fn the_last_record_survives_the_refill_that_finds_the_end() {
         // the bytes after the last delimiter make the final
-        // advance refill the buffer, and the refill compacts
-        // the last record's bytes away
+        // advance refill the buffer, and a refill compacting
+        // from the cursor would move the last record's bytes
         let bytes = b"# STOCKHOLM 1.0\na A\n//\ntrailing bytes past the end\n";
         let mut reader = Reader::with_chunk(&bytes[..], Format::Stockholm, 4);
 
         assert!(reader.advance().unwrap());
+        let last = reader.record().to_vec();
+
         assert!(!reader.advance().unwrap());
-        assert!(reader.record().is_empty());
+        assert_eq!(reader.record(), last);
+        assert_eq!(reader.position(), Some(0));
     }
 
     #[test]
@@ -2572,8 +2613,8 @@ mod reader_tests {
         }
 
         assert_eq!(n, want.len());
-        assert_eq!(readers.position(), None);
-        assert!(readers.record().is_empty());
+        assert_eq!(readers.position(), Some(n - 1));
+        assert_eq!(readers.record(), want[n - 1]);
     }
 
     #[test]
@@ -2640,8 +2681,33 @@ mod reader_tests {
             }
 
             assert!(!readers.advance_to(last + 1).unwrap());
-            assert_eq!(readers.position(), None);
-            assert!(readers.record().is_empty());
+            assert_eq!(readers.position(), Some(last));
+            assert_eq!(readers.record(), want[last]);
+        }
+    }
+
+    #[test]
+    fn readers_keep_the_last_record_across_empty_files_after_it() {
+        let a = written("before-empties", b">a1\nAC\n");
+        let empty = written("trailing-empty", b"");
+
+        for counted in [false, true] {
+            let mut readers = Readers::new([&a, &empty, &empty], Format::Fasta);
+            if counted {
+                readers.count().unwrap();
+            }
+
+            assert!(readers.advance().unwrap());
+            assert!(!readers.advance().unwrap(), "counted {counted}");
+            assert_eq!(readers.position(), Some(0));
+            assert_eq!(readers.record(), b">a1\nAC\n");
+
+            assert!(!readers.advance_to(5).unwrap(), "counted {counted}");
+            assert_eq!(readers.record(), b">a1\nAC\n");
+        }
+
+        for path in [a, empty] {
+            std::fs::remove_file(path).unwrap();
         }
     }
 
