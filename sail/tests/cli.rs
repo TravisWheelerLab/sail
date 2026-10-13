@@ -512,6 +512,47 @@ fn an_index_of_the_file_as_it_was_is_refused_and_named() {
 }
 
 #[test]
+fn a_position_past_the_end_fails_the_same_way_on_every_backend() {
+    let path = fixture("proteins.fa");
+    let held = String::from_utf8(sail(&["count", &path], b"").stdout).unwrap();
+    let held = held.trim();
+    let want = format!("position 999 was asked for and the input holds {held} records");
+
+    for mode in ["stream", "indexed", "memory"] {
+        let run = sail(&["get", &path, "999", "--read", mode], b"");
+
+        assert!(!run.ok, "--read {mode} found position 999");
+        assert!(run.stdout.is_empty(), "--read {mode} wrote before failing");
+        assert!(
+            run.stderr.contains(&want),
+            "--read {mode} said: {}",
+            run.stderr
+        );
+    }
+}
+
+#[test]
+fn count_and_names_read_a_current_index_and_refuse_a_stale_one() {
+    let s = Scratch::new("count-names-index");
+    let path = s.write("in.fa", b">a\nAAAA\n>b\nCCCC\n");
+    assert!(sail(&["index", &path], b"").ok);
+
+    let count = sail(&["count", &path, "--read", "indexed"], b"");
+    assert_eq!(String::from_utf8_lossy(&count.stdout).trim(), "2");
+    let names = sail(&["names", &path, "--read", "indexed"], b"");
+    assert_eq!(String::from_utf8_lossy(&names.stdout), "a\nb\n");
+
+    std::fs::write(&path, b">a\nAAAA\n>b\nCCCC\n>c\nGGGG\n").unwrap();
+
+    for op in ["count", "names"] {
+        let run = sail(&[op, &path, "--read", "indexed"], b"");
+
+        assert!(!run.ok, "{op} used the stale index");
+        assert!(run.stderr.contains("sail index"), "{op}: {}", run.stderr);
+    }
+}
+
+#[test]
 fn index_writes_an_index_file_that_loads_back() {
     let s = Scratch::new("index");
     let path = s.write("in.fa", b">a\nAAAA\n>b\nCCCC\n");
