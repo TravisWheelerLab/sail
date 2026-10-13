@@ -15,7 +15,7 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-09T22:24:21.478872468Z",
-  "updated_at": "2026-10-13T01:54:12.159254734Z",
+  "updated_at": "2026-10-13T01:54:12.167083063Z",
   "closed_at": "2026-10-12T18:06:01.488935391Z",
   "close_reason": "Landed on dev as ab97b44: index::Framed<S>, with IndexedFasta, IndexedStockholm and IndexedHmm as newtypes over it. The note on this issue has the detail.",
   "resolution": "done",
@@ -33,9 +33,10 @@
       "id": "cb5a7305",
       "at": "2026-10-12T18:01:56.110696727Z",
       "author": "Jack Roddy/c45d6630",
-      "text": "Built as Framed<S> in index.rs, with a private format-keyed build_for beside delim_of so open(path, format) takes the same chunked scan the collections took before; Index::build through Reader was left alone, so the open point about their relative cost is moot for this change. The three collections are newtypes with every public signature kept. Not a breaking change after all: the fields were private, so nothing outside the crate could see the struct become a tuple. Six tests cover Framed against Reader, detect, with_index, build_named, IndexedFasta and the map.",
+      "text": "Built as Framed<S> in index.rs. A private format-keyed build_for beside delim_of lets open(path, format) take the same chunked scan the collections took before. Index::build through Reader was left alone, so the open point about their relative cost did not need deciding. The three collections are newtypes with every public signature kept. Not a breaking change: the fields were private, so nothing outside the crate could see the struct become a tuple. Six tests cover Framed against Reader, detect, with_index, build_named, IndexedFasta and the map.",
       "commit": "dcaecb1",
-      "branch": "dev"
+      "branch": "dev",
+      "edited_at": "2026-10-13T01:54:12.167082863Z"
     }
   ],
   "stamps": {
