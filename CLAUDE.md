@@ -77,9 +77,13 @@ instance `a_delimiter_mid_line_is_not_a_record_boundary`,
 time because cargo runs a test binary from the package root rather than the
 workspace root.
 
-**Branches.** All work is committed on `dev`, in batches. `main` takes a merge
-only when a release is being cut, so it holds nothing unpublished. Do not branch
-off `dev` unless asked to.
+**Branches.** Work is committed on `dev`, in batches. A milestone or issue that
+changes a public API or an on-disk format, and will not be finished before the
+next release, goes on a branch named for it. That branch merges into `dev` once
+the work is whole, and takes merges from `dev` when the two drift apart. Nothing
+else branches off `dev` unless Jack asks. `main` takes a merge from `dev` only
+when a crate is being released. Unreleased code of the other crate may come
+along, and it reaches users only when its own crate is released.
 
 **Releases.** Jack says when a release is, never Claude. Until he does, versions
 in `Cargo.toml` stay where they are and changelog entries accumulate under
@@ -94,7 +98,13 @@ never aligned for tidiness. A break in `libsail` moves `libsail`'s minor, under
 cargo's rule that 0.x's minor is the breaking axis, and moves nothing in `sail`
 unless `sail`'s own interface changed. For the CLI that interface is the command
 line and what each subcommand writes, not the library underneath, and
-`sail/tests/cli.rs` is what says whether it moved.
+`sail/tests/cli.rs` is what says whether it moved. Before a release,
+`cargo semver-checks -p libsail` compares `libsail` with its last published
+version and reports whether the bump is a patch or a minor.
+
+**Formats.** A change to an on-disk layout bumps that format's version byte.
+The reader keeps an arm for the old layout by default. A breaking release may
+drop that arm, listed under `### Removed`.
 
 **Benchmarks.** `benchmarks/` is a separate cargo project rather than a
 workspace member. Its `setup.sh` fetches pinned builds of seqkit and the Easel

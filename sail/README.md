@@ -27,7 +27,7 @@ $ sail sort --key size -r proteins.fa -o sorted.fa
 $ sail split -k 4 --prefix chunk proteins.fa
 ```
 
-Nineteen commands in all. `sail --help` lists them, and each takes its own
+Twenty commands in all. `sail --help` lists them, and each takes its own
 `--help`.
 
 ## reading large files
