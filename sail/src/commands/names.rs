@@ -7,7 +7,7 @@ use libsail::collection::Iterable;
 use libsail::index::{Index, Reader};
 
 use crate::cli::{FormatArg, ReadArgs};
-use crate::input::{Backend, Inputs, Needs, dispatch};
+use crate::input::{Backend, Inputs, Needs, current_index, dispatch};
 use crate::output::writer;
 
 #[derive(Args)]
@@ -84,7 +84,18 @@ impl NamesArgs {
                     }
                 }
                 Backend::Indexed => {
-                    let index = Index::build_named(entry.reader()?, inputs.format())?;
+                    let saved = match entry.path().map(current_index).transpose()?.flatten() {
+                        Some(at) => Some(Index::read(&at)?),
+                        None => None,
+                    };
+
+                    // an index written without names answers
+                    // nothing here, so it is scanned past like a
+                    // missing one
+                    let index = match saved {
+                        Some(index) if index.has_names() => index,
+                        _ => Index::build_named(entry.reader()?, inputs.format())?,
+                    };
 
                     for n in 0..index.len() {
                         push(index.name(n)?.as_deref(), out)?;

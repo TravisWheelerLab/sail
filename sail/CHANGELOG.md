@@ -16,6 +16,11 @@ underneath, so `sail` and `libsail` move independently.
   index, where it used to be passed over with a full scan of the input on
   every run. Run `sail index` again or delete the index. A missing index is
   unchanged: the commands that use one build the offsets in memory.
+- `count` and `names` on the indexed backend read a current `.saidx` beside the
+  input, where they used to scan the input every run. `count` reads the total
+  from the index header alone. Both now refuse a stale index like the other
+  commands. `count` picks the indexed backend by default for a file, so a plain
+  `sail count` on a file with a stale index fails until it is rebuilt.
 
 ## [0.3.0] - 2026-09-16
 

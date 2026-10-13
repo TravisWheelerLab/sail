@@ -6,7 +6,7 @@ use libsail::collection::Indexable;
 use libsail::index::Index;
 
 use crate::cli::{FormatArg, ReadArgs};
-use crate::input::{Backend, Inputs, Needs, dispatch};
+use crate::input::{Backend, Inputs, Needs, current_index, dispatch};
 
 #[derive(Args)]
 pub struct CountArgs {
@@ -45,7 +45,10 @@ impl CountArgs {
                 // and the bytes of each are dropped as the
                 // next one overwrites them
                 Backend::Stream => libsail::index::count(entry.reader()?, inputs.format())?,
-                Backend::Indexed => Index::build(entry.reader()?, inputs.format())?.len(),
+                Backend::Indexed => match entry.path().map(current_index).transpose()?.flatten() {
+                    Some(at) => libsail::index::count_in(&at)?,
+                    None => Index::build(entry.reader()?, inputs.format())?.len(),
+                },
                 Backend::Memory => dispatch!(inputs.format(), entry, |collection| collection.len()),
             };
             total += n;
