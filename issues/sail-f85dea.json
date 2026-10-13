@@ -1,6 +1,6 @@
 {
   "id": "sail-f85dea",
-  "title": "A collection built from offsets the caller supplies, for mmseqs-style databases",
+  "title": "A collection built from offsets the caller supplies",
   "body": "An mmseqs database frames its records with a null byte and keeps their offsets in a separate .index file, with the data split across pdb.0 to pdb.N. Scanning for a delimiter is the wrong primitive for it, so it does not fit Delimit. Index::new(format, offsets) can hold offsets a caller parsed out of the .index file, and the numeric key could serve as the name, which leaves two decisions:\n\n1. How a .saidx tags a format libsail does not know. The header holds one format byte and the reader rejects any other value.\n2. Whether split data files get a concatenating Source, or whether the caller is told to pass one file at a time.\n\nThe same two decisions cover a consumer-supplied Delimit. Raised while shaping sail-88cc19 and left out of it on purpose: nail's own plan uses libsail's FASTA and p7hmm delimiters and nothing else.",
   "type": "decision",
   "status": "open",
@@ -15,7 +15,7 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-09T22:24:29.155146297Z",
-  "updated_at": "2026-10-09T22:24:29.155146297Z",
+  "updated_at": "2026-10-13T01:51:48.48595507Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
