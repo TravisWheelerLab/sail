@@ -15,9 +15,9 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-09T22:24:21.478872468Z",
-  "updated_at": "2026-10-13T01:51:48.493524963Z",
+  "updated_at": "2026-10-13T01:51:48.501275206Z",
   "closed_at": "2026-10-12T18:06:01.488935391Z",
-  "close_reason": "Framed<S> landed on dev with the three collections as newtypes over it; see the commit after dcaecb1",
+  "close_reason": "Landed on dev as ab97b44: index::Framed<S>, with IndexedFasta, IndexedStockholm and IndexedHmm as newtypes over it. The note on this issue has the detail.",
   "resolution": "done",
   "notes": [
     {
