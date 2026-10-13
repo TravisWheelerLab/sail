@@ -19,7 +19,7 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-09T21:28:01.754931518Z",
-  "updated_at": "2026-10-13T20:25:26.361650458Z",
+  "updated_at": "2026-10-13T20:41:59.070470709Z",
   "closed_at": "2026-10-13T20:25:26.361650458Z",
   "close_reason": "Landed in 7cd1e54 on dev. stale() returns Vec<usize>, as the last note explains.",
   "resolution": "done",
@@ -30,6 +30,14 @@
       "author": "Jack Roddy/424f83e5",
       "text": "Built on dev, not yet committed. `stale()` returns `Vec<usize>`, not `Result`. A data file that cannot be stat'd counts as stale, so the method has no error left to report.",
       "commit": "216d1f0",
+      "branch": "dev"
+    },
+    {
+      "id": "5274ddca",
+      "at": "2026-10-13T20:41:59.070470099Z",
+      "author": "Jack Roddy/424f83e5",
+      "text": "Renamed after landing: the module is `atlas`, the type `Atlas`, the extension `.satlas` and the magic `SLAT`. Jack chose the name for being shorter than manifest, and `.satlas` mirrors `.saidx`. Nothing had been released under the old name.",
+      "commit": "7cd1e54",
       "branch": "dev"
     }
   ],
