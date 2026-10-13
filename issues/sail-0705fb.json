@@ -18,7 +18,7 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-09T21:28:01.73339981Z",
-  "updated_at": "2026-10-13T00:16:31.686652803Z",
+  "updated_at": "2026-10-13T00:16:31.719702008Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
@@ -38,6 +38,14 @@
       "text": "If this and the parts file shared one list of files, the counting pass would go away because the counts are stamped already.",
       "commit": "06334a4",
       "branch": "main"
+    },
+    {
+      "id": "c2ccf2af",
+      "at": "2026-10-13T00:16:31.719701458Z",
+      "author": "Jack Roddy/c45d6630",
+      "text": "Left the milestone sail-31fdd9 on 2026-10-12: this is the one issue that needs both streaming (sail-317db4) and the index-file work, and it waits on each separately rather than living inside either.",
+      "commit": "ab97b44",
+      "branch": "dev"
     }
   ],
   "stamps": {
