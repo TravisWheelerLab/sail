@@ -17,11 +17,20 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-09T21:28:01.744163559Z",
-  "updated_at": "2026-10-13T02:04:06.522247145Z",
+  "updated_at": "2026-10-13T22:35:15.613288866Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
-  "notes": [],
+  "notes": [
+    {
+      "id": "d1cb086d",
+      "at": "2026-10-13T22:35:15.613288126Z",
+      "author": "Jack Roddy/424f83e5",
+      "text": "Held until after libsail 0.4.1 (Jack). It doesn't force a minor bump by itself. A v2 writer with a v1 reader arm keeps every existing index readable, but `is_current` must also accept v1, or every old `.saidx` reads as stale and is now refused. Only dropping the v1 arm would be a break.",
+      "commit": "7d4cedd",
+      "branch": "dev"
+    }
+  ],
   "stamps": {
     "created": {
       "commit": "06334a4",
