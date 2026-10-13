@@ -16,7 +16,7 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-09T21:28:01.711327875Z",
-  "updated_at": "2026-10-13T01:53:31.6429766Z",
+  "updated_at": "2026-10-13T01:54:12.135245311Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
@@ -25,9 +25,10 @@
       "id": "de77fddb",
       "at": "2026-10-13T00:16:31.702874247Z",
       "author": "Jack Roddy/c45d6630",
-      "text": "Split on 2026-10-12: this milestone was 'Selection over a stream and over several files, and an index that spans files' and mixed streaming with the index-file work. Streaming (sail-317db4) and the multi-file Reader (sail-0705fb, with its decision sail-a5d666) now stand alone.",
+      "text": "This milestone was 'Selection over a stream and over several files, and an index that spans files' and mixed streaming with the index-file work. Streaming (sail-317db4), the multi-file Reader (sail-0705fb) and its decision (sail-a5d666) now stand alone. Alignment (sail-bb932e) left later for the same reason.",
       "commit": "ab97b44",
-      "branch": "dev"
+      "branch": "dev",
+      "edited_at": "2026-10-13T01:54:12.135244981Z"
     }
   ],
   "stamps": {
