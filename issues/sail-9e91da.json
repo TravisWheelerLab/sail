@@ -1,7 +1,7 @@
 {
   "id": "sail-9e91da",
   "title": "cargo doc reports six warnings on libsail",
-  "body": "cargo doc --workspace --all-features --no-deps reports six warnings on libsail at ab97b44:\n\n- the doc on index::EXTENSION links Index::path_for, but path_for is a free function\n- an unresolved link to Index::save_as\n- the module doc of index and the doc on VALID link the private items scan and frame\n- format is both a module and a macro",
+  "body": "`cargo doc --workspace --all-features --no-deps` reports six warnings on `libsail` at ab97b44:\n\n- the doc on `index::EXTENSION` links `Index::path_for`, but `path_for` is a free function\n- an unresolved link to `Index::save_as`\n- the module doc of `index` and the doc on `VALID` link the private items `scan` and `frame`\n- `format` is both a module and a macro",
   "type": "bug",
   "status": "open",
   "priority": 4,
@@ -15,7 +15,7 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-13T01:54:12.39991554Z",
-  "updated_at": "2026-10-13T01:54:12.39991554Z",
+  "updated_at": "2026-10-13T02:05:01.820706486Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
