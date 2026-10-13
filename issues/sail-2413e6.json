@@ -17,9 +17,9 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-09T21:28:01.76535608Z",
-  "updated_at": "2026-10-13T20:50:26.137746102Z",
+  "updated_at": "2026-10-13T22:24:35.657357553Z",
   "closed_at": "2026-10-13T20:50:26.137746102Z",
-  "close_reason": "Landed in 2170fd0 on dev. Reading an atlas is sail-4d86c8.",
+  "close_reason": "Landed in 06b7ad4 on the atlas branch. Reading an atlas is sail-4d86c8.",
   "resolution": "done",
   "notes": [],
   "stamps": {
