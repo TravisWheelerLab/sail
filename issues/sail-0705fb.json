@@ -18,9 +18,9 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-09T21:28:01.73339981Z",
-  "updated_at": "2026-10-13T20:08:01.073481167Z",
+  "updated_at": "2026-10-13T22:24:35.625214019Z",
   "closed_at": "2026-10-13T20:08:01.073481167Z",
-  "close_reason": "Landed in 9e8285d on dev. See the note before this one for the constructor change.",
+  "close_reason": "Landed in 0455913 on dev. See the note before this one for the constructor change.",
   "resolution": "done",
   "notes": [
     {
