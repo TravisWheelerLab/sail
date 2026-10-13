@@ -2123,6 +2123,176 @@ impl<R: Read> Reader<R> {
     }
 }
 
+// ---
+
+/// Several files' records, framed one file at a time and numbered as one run.
+///
+/// ```no_run
+/// # use libsail::{format::Format, index::Readers};
+/// # fn main() -> libsail::Result<()> {
+/// let mut readers = Readers::new(["a.fa", "b.fa"], Format::Fasta);
+/// while readers.advance()? {
+///     let record = readers.record();
+///     // ...
+/// }
+/// # Ok(())
+/// # }
+/// ```
+pub struct Readers {
+    paths: Vec<PathBuf>,
+    format: Format,
+
+    /// How many records each path holds, once [`count`](Self::count) has run.
+    counts: Option<Vec<usize>>,
+
+    /// The reader over `paths[part]`, while it has records left.
+    current: Option<Reader<File>>,
+    part: usize,
+
+    /// The index of `paths[part]`'s first record.
+    base: usize,
+
+    /// The index of the current record.
+    position: Option<usize>,
+}
+
+impl Readers {
+    /// Frame each of `paths` as `format`, in order. Nothing is opened until it
+    /// is read.
+    pub fn new(paths: impl IntoIterator<Item = impl AsRef<Path>>, format: Format) -> Readers {
+        Readers {
+            paths: paths
+                .into_iter()
+                .map(|path| path.as_ref().to_path_buf())
+                .collect(),
+            format,
+            counts: None,
+            current: None,
+            part: 0,
+            base: 0,
+            position: None,
+        }
+    }
+
+    /// How many records the paths hold together, by one pass over each. Once
+    /// counted, [`advance_to`](Self::advance_to) skips whole files by these
+    /// counts.
+    pub fn count(&mut self) -> Result<usize> {
+        if self.counts.is_none() {
+            let counts = self
+                .paths
+                .iter()
+                .map(|path| count(File::open(path)?, self.format))
+                .collect::<Result<Vec<_>>>()?;
+
+            self.counts = Some(counts);
+        }
+
+        Ok(self.counts.as_deref().unwrap_or_default().iter().sum())
+    }
+
+    /// The current record's bytes; empty before the first [`advance`](Self::advance)
+    /// and after one returns `false`.
+    pub fn record(&self) -> &[u8] {
+        match &self.current {
+            Some(reader) => reader.record(),
+            None => &[],
+        }
+    }
+
+    /// The index of the current record across every path; `None` before the
+    /// first [`advance`](Self::advance) and after one returns `false`.
+    pub fn position(&self) -> Option<usize> {
+        self.position
+    }
+
+    /// Advance to the next record. `false` once every path has run out.
+    pub fn advance(&mut self) -> Result<bool> {
+        loop {
+            self.open()?;
+
+            let Some(reader) = self.current.as_mut() else {
+                self.position = None;
+
+                return Ok(false);
+            };
+
+            if reader.advance()? {
+                self.position = reader.position().map(|at| self.base + at);
+
+                return Ok(true);
+            }
+
+            self.close();
+        }
+    }
+
+    /// Advance until record `n` is current. `false` if the paths run out first.
+    ///
+    /// # Panics
+    ///
+    /// If record `n` is behind the current one, or behind the end of the paths
+    /// already reached.
+    pub fn advance_to(&mut self, n: usize) -> Result<bool> {
+        let floor = self.position.unwrap_or_else(|| self.framed());
+        assert!(n >= floor, "advance_to({n}) is behind record {floor}");
+
+        loop {
+            self.skip_to(n);
+            self.open()?;
+
+            let Some(reader) = self.current.as_mut() else {
+                self.position = None;
+
+                return Ok(false);
+            };
+
+            if reader.advance_to(n - self.base)? {
+                self.position = Some(n);
+
+                return Ok(true);
+            }
+
+            self.close();
+        }
+    }
+
+    /// How many records have been framed across every path.
+    fn framed(&self) -> usize {
+        self.base + self.current.as_ref().map_or(0, |reader| reader.framed)
+    }
+
+    /// Open `paths[part]` if no reader is open and a path remains.
+    fn open(&mut self) -> Result<()> {
+        if self.current.is_none() && self.part < self.paths.len() {
+            let file = File::open(&self.paths[self.part])?;
+            self.current = Some(Reader::new(file, self.format));
+        }
+
+        Ok(())
+    }
+
+    /// Move past `paths[part]` once its reader has run out.
+    fn close(&mut self) {
+        self.base += self.current.take().map_or(0, |reader| reader.framed);
+        self.part += 1;
+    }
+
+    /// Move past every path that ends before record `n`, without opening it,
+    /// once the counts are known.
+    fn skip_to(&mut self, n: usize) {
+        let Some(counts) = &self.counts else {
+            return;
+        };
+
+        while self.part < counts.len() && self.base + counts[self.part] <= n {
+            self.base += counts[self.part];
+            self.part += 1;
+            self.current = None;
+        }
+    }
+}
+
 #[cfg(test)]
 mod reader_tests {
     use super::*;
@@ -2368,6 +2538,148 @@ mod reader_tests {
         }
 
         assert_eq!(count(&b""[..], Format::Fasta).unwrap(), 0);
+    }
+
+    /// `bytes` written to a file of its own under the temp directory.
+    fn written(tag: &str, bytes: &[u8]) -> PathBuf {
+        let path =
+            std::env::temp_dir().join(format!("libsail-readers-{tag}-{}", std::process::id()));
+        std::fs::write(&path, bytes).unwrap();
+
+        path
+    }
+
+    /// Every record of `paths`, read one file at a time.
+    fn each(paths: &[&str], format: Format) -> Vec<Vec<u8>> {
+        paths
+            .iter()
+            .flat_map(|path| indexed(&std::fs::read(path).unwrap(), format))
+            .map(|(_, bytes)| bytes)
+            .collect()
+    }
+
+    const TWO_FILES: [&str; 2] = [fixture!("proteins.fa"), fixture!("proteins_extra.fa")];
+
+    #[test]
+    fn readers_number_the_records_of_every_file_as_one_run() {
+        let want = each(&TWO_FILES, Format::Fasta);
+        let mut readers = Readers::new(TWO_FILES, Format::Fasta);
+        assert_eq!(readers.position(), None);
+
+        let mut n = 0;
+        while readers.advance().unwrap() {
+            assert_eq!(readers.position(), Some(n));
+            assert_eq!(readers.record(), want[n], "record {n}");
+            n += 1;
+        }
+
+        assert_eq!(n, want.len());
+        assert_eq!(readers.position(), None);
+        assert!(readers.record().is_empty());
+    }
+
+    #[test]
+    fn a_file_without_a_final_newline_loses_no_record_of_the_next() {
+        // chained, the unterminated last line of the first
+        // file swallows the second file's first delimiter.
+        // the empty file between them holds no records and
+        // must not shift the numbering
+        let a = written("unterminated", b">a1\nAC\n>a2\nGT");
+        let empty = written("empty", b"");
+        let b = written("next", b">b1\nTT\n>b2\nCC\n");
+
+        let chained = std::fs::File::open(&a)
+            .unwrap()
+            .chain(std::fs::File::open(&b).unwrap());
+        assert_eq!(count(chained, Format::Fasta).unwrap(), 3);
+
+        let mut readers = Readers::new([&a, &empty, &b], Format::Fasta);
+        let mut got = Vec::new();
+        while readers.advance().unwrap() {
+            got.push(readers.record().to_vec());
+        }
+
+        let want: [&[u8]; 4] = [b">a1\nAC\n", b">a2\nGT", b">b1\nTT\n", b">b2\nCC\n"];
+        assert_eq!(got, want);
+        assert_eq!(readers.count().unwrap(), 4);
+
+        for path in [a, empty, b] {
+            std::fs::remove_file(path).unwrap();
+        }
+    }
+
+    #[test]
+    fn count_mid_walk_neither_moves_the_walk_nor_counts_from_it() {
+        let want = each(&TWO_FILES, Format::Fasta);
+        let mut readers = Readers::new(TWO_FILES, Format::Fasta);
+
+        readers.advance_to(3).unwrap();
+        assert_eq!(readers.count().unwrap(), want.len());
+        assert_eq!(readers.position(), Some(3));
+
+        assert!(readers.advance().unwrap());
+        assert_eq!(readers.record(), want[4]);
+    }
+
+    #[test]
+    fn advance_to_lands_on_the_same_records_counted_or_not() {
+        let want = each(&TWO_FILES, Format::Fasta);
+        let first = indexed(&std::fs::read(TWO_FILES[0]).unwrap(), Format::Fasta).len();
+        let last = want.len() - 1;
+
+        for counted in [false, true] {
+            let mut readers = Readers::new(TWO_FILES, Format::Fasta);
+            if counted {
+                readers.count().unwrap();
+            }
+
+            // either side of the boundary between the files,
+            // and a repeat that leaves the record current
+            for n in [0, 1, first - 1, first, first, last] {
+                assert!(readers.advance_to(n).unwrap(), "to {n}, counted {counted}");
+                assert_eq!(readers.position(), Some(n));
+                assert_eq!(readers.record(), want[n], "to {n}, counted {counted}");
+            }
+
+            assert!(!readers.advance_to(last + 1).unwrap());
+            assert_eq!(readers.position(), None);
+            assert!(readers.record().is_empty());
+        }
+    }
+
+    #[test]
+    fn a_counted_file_before_the_target_is_never_opened() {
+        // removing the first file after the count proves the
+        // walk steps over it: opening it would fail
+        let a = written("skipped", b">a1\nAC\n>a2\nGT\n");
+        let b = written("landed", b">b1\nTT\n");
+
+        let mut readers = Readers::new([&a, &b], Format::Fasta);
+        assert_eq!(readers.count().unwrap(), 3);
+        std::fs::remove_file(&a).unwrap();
+
+        assert!(readers.advance_to(2).unwrap());
+        assert_eq!(readers.record(), b">b1\nTT\n");
+
+        std::fs::remove_file(b).unwrap();
+    }
+
+    #[test]
+    fn readers_over_no_paths_hold_no_records() {
+        let mut readers = Readers::new(Vec::<PathBuf>::new(), Format::Fasta);
+
+        assert_eq!(readers.count().unwrap(), 0);
+        assert!(!readers.advance().unwrap());
+        assert!(!readers.advance_to(0).unwrap());
+    }
+
+    #[test]
+    #[should_panic(expected = "advance_to(1) is behind record 2")]
+    fn readers_advance_to_a_record_already_passed_panics() {
+        let mut readers = Readers::new(TWO_FILES, Format::Fasta);
+
+        readers.advance_to(2).unwrap();
+        readers.advance_to(1).unwrap();
     }
 }
 

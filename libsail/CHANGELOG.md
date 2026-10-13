@@ -24,6 +24,11 @@ cargo's reading of it below 1.0: the **minor** is the breaking axis, so 0.2 to
   after one returns `false`. `advance_to(n)` advances until record `n` is
   current, and panics if record `n` is already behind the reader. `lines::Rows`
   gains the same two methods, counting rows.
+- `index::Readers`, which reads several files as one run of records with one
+  `position()`. Each file gets its own `Reader`, so a file without a final
+  newline cannot swallow the first record of the next file as `Read::chain`
+  does. `count()` keeps one count per file. Once it has run, `advance_to(n)`
+  skips every file that ends before record `n` without opening it.
 
 ### Changed
 
