@@ -1,7 +1,7 @@
 {
   "id": "sail-f5a79d",
   "title": "One index-file version bump for alignment and the parts file, or two?",
-  "body": "Padding the header for alignment (sail-bb932e) and adding the list file (sail-a59d6f) both change what sits on disk.\n\n1. One bump: land both as VERSION 2. One older layout to keep reading.\n2. Two bumps: each lands on its own. Two older layouts to read for as long as the format exists.\n\nLean: the question dissolves if sail-9d931d goes by reference. The list file is then its own file with its own magic and version. The .saidx layout changes once, for alignment.",
+  "body": "Padding the header for alignment (sail-bb932e) and adding the parts file (sail-a59d6f) both change what sits on disk.\n\n1. One bump: land both as VERSION 2. One older layout to keep reading.\n2. Two bumps: each lands on its own. Two older layouts to read for as long as the format exists.\n\nLean: the question dissolves if sail-9d931d goes by reference. The parts file is then its own file with its own magic and version. The .saidx layout changes once, for alignment.",
   "type": "decision",
   "status": "open",
   "priority": 3,
@@ -15,7 +15,7 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-09T21:28:01.808261489Z",
-  "updated_at": "2026-10-13T01:53:31.68987601Z",
+  "updated_at": "2026-10-13T01:54:23.988633328Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
