@@ -15,11 +15,20 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-13T19:13:49.589387838Z",
-  "updated_at": "2026-10-13T19:13:49.589387838Z",
+  "updated_at": "2026-10-13T21:46:19.108605327Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
-  "notes": [],
+  "notes": [
+    {
+      "id": "102ad4b3",
+      "at": "2026-10-13T21:46:19.108604767Z",
+      "author": "Jack Roddy/424f83e5",
+      "text": "Decided by Jack: keep the last record. After `advance` returns `false`, `position()` stays `Some(last)` and `record()` returns the last record. Reasoning: it keeps information a caller has no other way to recover. After a failed `advance_to`, `position() + 1` is the record count, which sail-cce3b8 needs. Applies to `Reader`, `Rows` and `Readers`.",
+      "commit": "473397a",
+      "branch": "dev"
+    }
+  ],
   "stamps": {
     "created": {
       "commit": "6681859",
