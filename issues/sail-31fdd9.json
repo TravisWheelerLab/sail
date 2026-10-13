@@ -1,6 +1,6 @@
 {
   "id": "sail-31fdd9",
-  "title": "An index over several files, and the .saidx layout that lets one be mapped",
+  "title": "One index file over several data files",
   "body": "Index describes one file. Index::write stamps that file's length and mtime, and is_current re-stats one data path against one index path. Aggregate<IndexedFasta> puts several indexed files in one numbering, but nothing on disk records which files or in which order, so the numbering exists only in the call that built it, and a stale part is rebuilt in memory without a word.\n\nThis milestone gives an aggregate a file of its own: an ordered list of the parts, with a stamp and a record count each, so the total and each part's first position come from one read, and a changed part can be named. sail index gains several inputs and an explicit -o to write one.\n\nEight-byte alignment of the .saidx layout is here as well. Its purpose is unrelated, but it changes the bytes on disk, and if the list file does too the two want one version bump rather than two. Whether the list file touches the .saidx layout is sail-9d931d.\n\nStreaming is not part of this. Reader counting and seeking (sail-317db4) stands alone. A Reader over several files (sail-0705fb) is the one issue that needs both this work and streaming, and it waits on each separately.",
   "type": "milestone",
   "status": "open",
@@ -16,7 +16,7 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-09T21:28:01.711327875Z",
-  "updated_at": "2026-10-13T00:16:31.702874747Z",
+  "updated_at": "2026-10-13T01:51:48.454746591Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
