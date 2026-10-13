@@ -1,7 +1,7 @@
 {
   "id": "sail-a5d666",
   "title": "Does Reader::over take paths, readers, or both?",
-  "body": "Paths let Reader::over reopen for a second pass, which the counting pass needs. Readers are more general and cannot be replayed. Possibly both, with the count required up front when it is handed readers.\n\nIf Reader::over took a parts file instead of a slice of paths, the counting pass would go away, because the counts are stamped already. That ties this to the parts-file decision.",
+  "body": "Reader::over needs two passes over its sources: a count for Selection and a walk. A path can be opened twice. An open reader cannot be rewound.\n\n1. Paths only. Both passes work. Cost: a caller holding open readers cannot use it. No caller in sail holds one. stdin is one stream and sail already reads it whole.\n2. Readers only. Cost: no counting pass, so the caller supplies the count up front.\n3. Both. Cost: two constructors with different contracts for one type.\n\nLean: paths only. A constructor over the list file from sail-a59d6f can come later as an addition.",
   "type": "decision",
   "status": "open",
   "priority": 2,
@@ -15,7 +15,7 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-09T21:28:01.775915631Z",
-  "updated_at": "2026-10-13T00:16:31.694386003Z",
+  "updated_at": "2026-10-13T01:53:31.674471228Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
