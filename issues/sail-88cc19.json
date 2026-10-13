@@ -15,7 +15,7 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-09T22:24:21.478872468Z",
-  "updated_at": "2026-10-13T01:53:31.659018017Z",
+  "updated_at": "2026-10-13T01:54:12.159254734Z",
   "closed_at": "2026-10-12T18:06:01.488935391Z",
   "close_reason": "Landed on dev as ab97b44: index::Framed<S>, with IndexedFasta, IndexedStockholm and IndexedHmm as newtypes over it. The note on this issue has the detail.",
   "resolution": "done",
@@ -24,9 +24,10 @@
       "id": "47e8f32f",
       "at": "2026-10-09T23:04:01.442690786Z",
       "author": "Jack Roddy/c45d6630",
-      "text": "Jack approved the concrete design on 2026-10-09 after the generic Indexed<P, S> shape was costed against the concrete-first counting rules and rejected. Not yet claimed; implementation waits on his go.",
+      "text": "Jack approved the concrete design after the generic Indexed<P, S> shape was costed against the concrete-first counting rules and rejected.",
       "commit": "dcaecb1",
-      "branch": "dev"
+      "branch": "dev",
+      "edited_at": "2026-10-13T01:54:12.159254514Z"
     },
     {
       "id": "cb5a7305",
