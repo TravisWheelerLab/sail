@@ -70,6 +70,11 @@ fn blessing() -> bool {
 fn golden(case: &str, got: &[u8]) -> Option<String> {
     let at = golden_dir().join(format!("{case}.out"));
 
+    // a command that names its inputs prints the absolute
+    // fixture path, which differs in every checkout
+    let got = unrooted(got);
+    let got = got.as_slice();
+
     if blessing() {
         std::fs::create_dir_all(golden_dir()).expect("the golden directory is writable");
         std::fs::write(&at, got).expect("the golden is writable");
@@ -96,6 +101,23 @@ fn golden(case: &str, got: &[u8]) -> Option<String> {
         head(&want),
         head(got),
     ))
+}
+
+/// `bytes` with every absolute fixture path cut down to `fixtures/<name>`.
+fn unrooted(bytes: &[u8]) -> Vec<u8> {
+    let root = fixture("");
+    let root = root.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut rest = bytes;
+
+    while let Some(at) = rest.windows(root.len()).position(|w| w == root) {
+        out.extend_from_slice(&rest[..at]);
+        out.extend_from_slice(b"fixtures/");
+        rest = &rest[at + root.len()..];
+    }
+    out.extend_from_slice(rest);
+
+    out
 }
 
 /// The first few lines of a golden, so a report over many cases stays readable.
