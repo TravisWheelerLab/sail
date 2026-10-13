@@ -19,11 +19,20 @@
   "lease_expires": "2026-10-13T20:37:38.246626317Z",
   "defer_until": null,
   "created_at": "2026-10-09T21:28:01.754931518Z",
-  "updated_at": "2026-10-13T20:24:36.751279352Z",
+  "updated_at": "2026-10-13T20:24:36.76088103Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
-  "notes": [],
+  "notes": [
+    {
+      "id": "44ea9e38",
+      "at": "2026-10-13T20:24:36.76088034Z",
+      "author": "Jack Roddy/424f83e5",
+      "text": "Built on dev, not yet committed. `stale()` returns `Vec<usize>`, not `Result`. A data file that cannot be stat'd counts as stale, so the method has no error left to report.",
+      "commit": "216d1f0",
+      "branch": "dev"
+    }
+  ],
   "stamps": {
     "created": {
       "commit": "06334a4",
