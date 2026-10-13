@@ -3,7 +3,7 @@
   "title": "One Reader over several files",
   "body": "`Aggregate<I>` addresses several collections as one range. There is no streaming counterpart. `Read::chain` is not one:\n\n```text\na.chain(b)                  -> [\"a1\", \"a2\", \"b1\", \"b2\"]\na_without_newline.chain(b)  -> [\"a1\", \"a2\",       \"b2\"]\n```\n\n`b1` is gone and nothing reports it. `Reader` seeds a sentinel newline before byte 0 so a file opening with a delimiter needs no special case. That sentinel is per stream rather than per file. Chained, the bytes do hold `TTTT>b1 x` on one line, so three records is the right reading of them. This is not a `libsail` bug, which is what makes it dangerous: nothing is positioned to notice.\n\n`sail` is already immune, because every multi-input command builds a fresh `Reader` per entry rather than chaining. That per-file loop is the behaviour to lift.\n\n## Proposal\n\nA new type in `index` that reads several paths as one run of records, with a fresh `Reader<File>` per path and one global index space:\n\n```rust\nimpl Readers {\n    pub fn new(paths: impl IntoIterator<Item = impl AsRef<Path>>, format: Format) -> Readers;\n    pub fn count(&mut self) -> Result<usize>;\n    pub fn advance(&mut self) -> Result<bool>;\n    pub fn advance_to(&mut self, n: usize) -> Result<bool>;\n    pub fn position(&self) -> Option<usize>;\n    pub fn record(&self) -> &[u8];\n}\n```\n\n```rust\nlet mut readers = Readers::new(paths, format);\nlet n = readers.count()?;\n\nfor at in Selection::new(n, m, seed) {\n    if !readers.advance_to(at)? { break; }\n    take(readers.record());\n}\n```\n\n- It takes paths only (sail-a5d666), since `count` and the walk each open every path.\n- `new` opens nothing, like `Reader::new`. A path that fails to open is an `Err` from the `advance`, `advance_to` or `count` that reaches it.\n- `count` opens every path and keeps one count per path. It counts from the start of each file whatever the walk has reached.\n- Once `count` has run, `advance_to(n)` skips every file that ends before record `n` without opening it. Before that, it frames every record it passes, file by file.\n- `position`, `record` and the panic on going backwards follow `Reader`'s rules (sail-317db4).\n- One format covers every path.\n\nNothing in the API names a part. A caller sees one run of records and a global position.\n\n## Rejected\n\n- `Reader::over` returning this type. A constructor on `Reader` that returns a different type reads as a `Reader`.\n- `offset()` as a file index paired with that file's `Offset`. It puts the parts into the API.\n- `offset()` as a byte offset into the files laid end to end. Every reader in `libsail` addresses one file, so using the value means mapping it back to a file, which needs the part boundaries again.\n- A `FileIndex(usize)` newtype for the file index. It went with the file-index `offset()`.\n\n## Out of scope\n\n`offset()` waits on sail-9d931d, whose answer decides which kind of offset a multi-file index needs. `sail` gains no caller here, since `sail skim` takes one input.\n\n## Cost\n\nAdditive. One new public type in `index`.",
   "type": "feature",
-  "status": "in_progress",
+  "status": "closed",
   "priority": 2,
   "labels": [
     "libsail"
@@ -15,13 +15,13 @@
   ],
   "related": [],
   "assignee": "Jack Roddy/424f83e5",
-  "lease_expires": "2026-10-13T20:15:49.240057465Z",
+  "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-09T21:28:01.73339981Z",
-  "updated_at": "2026-10-13T20:08:01.064414424Z",
-  "closed_at": null,
-  "close_reason": null,
-  "resolution": null,
+  "updated_at": "2026-10-13T20:08:01.073481167Z",
+  "closed_at": "2026-10-13T20:08:01.073481167Z",
+  "close_reason": "Landed in 9e8285d on dev. See the note before this one for the constructor change.",
+  "resolution": "done",
   "notes": [
     {
       "id": "138f16ef",
@@ -63,6 +63,9 @@
       "commit": "06334a4",
       "branch": "main"
     },
-    "closed": null
+    "closed": {
+      "commit": "9e8285d",
+      "branch": "dev"
+    }
   }
 }
