@@ -1,0 +1,31 @@
+{
+  "id": "sail-dfcb07",
+  "title": "Does an atlas pack its parts' indexes into one file, as an archive does?",
+  "body": "sail-9d931d decided that an atlas points at per-file `.saidx` files: `libsail::atlas::Atlas` writes a `.satlas` holding each part's path, stamp and record count, and each part keeps its own `.saidx` beside it. This reopens that choice with a layout the original options did not consider: one file holding every part's `.saidx` the way an archive holds its members.\n\ntar stores each member as a 512-byte header and the member's bytes, with no table of contents, so finding a member means walking every header before it. zip adds a central directory at the end of the file and a fixed-size footer pointing at it. A reader seeks to any member from the directory, and a rewritten member is appended along with a new directory, leaving the old copy as dead bytes.\n\n## Options\n\n1. By reference, as built. N + 1 files on disk. A sample opens the atlas and each part's `.saidx` it touches. Editing one part rewrites that part's `.saidx`. Every part stays usable on its own.\n2. Packed, zip-style. One file holding every part's `.saidx` byte for byte, each padded to 8 bytes, followed by a table and a fixed footer:\n\n```text\nSLAT header: version, format\npart 0's .saidx, byte-identical, padded to 8\npart 1's .saidx, byte-identical, padded to 8\n...\ntable: per part, path, stamp, count, and the part's start and end here\nfooter: where the table starts\n```\n\n3. Both. By reference stays the default, and `sail atlas --pack` writes the packed form for an atlas that will not change. The table says per part whether its index is inline or at a path.\n\n| concern | by reference | packed |\n|---|---|---|\n| files on disk | N + 1 | 1 |\n| opens for a sample | 1 + parts touched | 1 |\n| offsets of every part | one mapping per part | one mapping, zero-copy once sail-bb932e aligns `.saidx` |\n| editing one part | rewrite its `.saidx` | append the part and a new table, the old copy is dead bytes |\n| dead bytes | none | grow until a compaction pass |\n| a part used alone | as is | after extracting its region, one copy |\n| code | done | a base offset in `Index::open`, the table, the footer, compaction |\n\nAt the target scale the offsets alone are about 19.6 GB, which is why rewriting inline offsets in place lost the first time. Packing avoids an in-place rewrite by appending, at the cost of dead bytes.\n\n## Open\n\nWhat decides this is a measurement no one has taken: time spent opening per-part `.saidx` files against time spent reading records, for a sample drawn from an atlas of about a thousand parts, on the `benchmarks/` setup. If the opens are a small share, option 1 stays. If they dominate, option 2 or 3 is worth its code.\n\nNo lean until that number exists.",
+  "type": "decision",
+  "status": "open",
+  "priority": 3,
+  "labels": [
+    "libsail",
+    "sail"
+  ],
+  "parent": null,
+  "blocked_by": [],
+  "related": [],
+  "assignee": null,
+  "lease_expires": null,
+  "defer_until": null,
+  "created_at": "2026-10-13T21:32:05.808134737Z",
+  "updated_at": "2026-10-13T21:32:05.808134737Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
+  "notes": [],
+  "stamps": {
+    "created": {
+      "commit": "2170fd0",
+      "branch": "dev"
+    },
+    "closed": null
+  }
+}
