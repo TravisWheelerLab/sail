@@ -1,7 +1,7 @@
 {
   "id": "sail-31fdd9",
-  "title": "Selection over a stream and over several files, and an index that spans files",
-  "body": "Planned for the release after libsail 0.4.0: two additions that make Selection usable over a stream and over several files, and two changes to what an index is, one to the bytes it occupies and one to how many files it can describe. All four are additive, so none forces a minor on its own.\n\nWhat is awkward now. Selection works over a stream today, but every caller writes the same two loops. This is sail skim's streaming arm with the sail-specific parts removed:\n\n    // pass 1: the count Selection needs, which a Reader cannot answer\n    let mut reader = Reader::new(File::open(path)?, Format::Fasta);\n    let mut n = 0;\n    while reader.advance()? { n += 1; }\n\n    // pass 2: the draw, with the caller keeping its own position\n    let mut drawn = Selection::new(n, m, seed).peekable();\n    let mut reader = Reader::new(File::open(path)?, Format::Fasta);\n    let mut at = 0;\n    while reader.advance()? {\n        if drawn.peek() == Some(&at) { drawn.next(); take(reader.record()); }\n        at += 1;\n    }\n\nThree things are the caller's that need not be: counting, tracking at, and peeking. None of them is the part we deliberately left to the caller, which was deciding how to cross a gap.",
+  "title": "An index over several files, and the .saidx layout that lets one be mapped",
+  "body": "Index describes one file. Index::write stamps that file's length and mtime, and is_current re-stats one data path against one index path. Aggregate<IndexedFasta> puts several indexed files in one numbering, but nothing on disk records which files or in which order, so the numbering exists only in the call that built it, and a stale part is rebuilt in memory without a word.\n\nThis milestone gives an aggregate a file of its own: an ordered list of the parts, with a stamp and a record count each, so the total and each part's first position come from one read, and a changed part can be named. sail index gains several inputs and an explicit -o to write one.\n\nEight-byte alignment of the .saidx layout is here as well. Its purpose is unrelated, but it changes the bytes on disk, and if the list file does too the two want one version bump rather than two. Whether the list file touches the .saidx layout is sail-9d931d.\n\nStreaming is not part of this. Reader counting and seeking (sail-317db4) stands alone. A Reader over several files (sail-0705fb) is the one issue that needs both this work and streaming, and it waits on each separately.",
   "type": "milestone",
   "status": "open",
   "priority": 2,
@@ -16,7 +16,7 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-09T21:28:01.711327875Z",
-  "updated_at": "2026-10-09T21:38:00.369757558Z",
+  "updated_at": "2026-10-13T00:16:31.670588526Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
