@@ -15,9 +15,9 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-09T21:28:01.722959268Z",
-  "updated_at": "2026-10-13T19:20:49.419071599Z",
+  "updated_at": "2026-10-13T22:24:35.616723273Z",
   "closed_at": "2026-10-13T19:20:49.419071599Z",
-  "close_reason": "Landed in c5f3fa2 on dev. The note before this one says what moved and why sail get kept its own loop.",
+  "close_reason": "Landed in 87b48e2 on dev. The note before this one says what moved and why sail get kept its own loop.",
   "resolution": "done",
   "notes": [
     {
