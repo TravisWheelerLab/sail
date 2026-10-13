@@ -3,7 +3,7 @@
   "title": "Does sail get stream its positions with advance_to?",
   "body": "`sail get`'s streaming arm (`get.rs`, `Backend::Stream`) frames every record up to the largest position asked for with `Reader::advance()`. It keeps the records inside a requested range and counts as it goes:\n\n```rust\nlet mut n = 0;\nwhile n < last && reader.advance()? {\n    if wanted.iter().any(|&(f, l)| n + 1 >= f && n < l) {\n        held[n] = Some(reader.record().to_vec());\n    }\n    n += 1;\n}\nif n < last {\n    bail!(\"position {last} was asked for and the input holds {n} records\")\n}\n```\n\nsail-317db4 added `Reader::advance_to(n)`. With it, the loop could walk only the requested positions:\n\n```rust\n// ascending and without repeats, the order advance_to needs\nlet positions: BTreeSet<usize> = wanted\n    .iter()\n    .flat_map(|&(first, last)| first - 1..last)\n    .collect();\n\nfor &at in &positions {\n    if !reader.advance_to(at)? {\n        bail!(\"position {last} was asked for and the input holds {} records\", ???)\n    }\n    held[at] = Some(reader.record().to_vec());\n}\n```\n\nBoth loops read the same bytes, since `advance_to` frames every record it passes. The one obstacle is the `???`. When `advance_to` returns `false`, it has framed the rest of the input without handing any of it to `get`, and `position()` is `None`. Take `get 3,500` on a 40-record file. `get` learns only that the input holds at least 3 records. A counter in `get` cannot recover the number, and stdin cannot be read twice. The Indexed and Memory arms print the same message from `collection.len()`, so the count is part of what every backend writes.\n\n## Options\n\n| option | `libsail` | `sail` command line | the error tells the user |\n|---|---|---|---|\n| leave `get` as it is | none | none | the count |\n| a public count of records framed, the private `framed` field exposed | new method | none | the count |\n| wait for sail-427b32 to pick keep last, so `position() + 1` is the count | none beyond that decision | none | the count |\n| drop the count from the message in all three backends | none | message changes | only that the input is short |\n\nLeaning: leave `get` as it is until sail-427b32 is decided. If it picks keep last, the third option costs nothing more. Whether the `advance_to` loop reads more clearly than today's is the open judgment.",
   "type": "decision",
-  "status": "in_progress",
+  "status": "closed",
   "priority": 4,
   "labels": [
     "sail",
@@ -13,19 +13,22 @@
   "blocked_by": [],
   "related": [],
   "assignee": "Jack Roddy/424f83e5",
-  "lease_expires": "2026-10-13T22:49:51.216533505Z",
+  "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-13T19:35:47.587817764Z",
-  "updated_at": "2026-10-13T22:34:51.216533505Z",
-  "closed_at": null,
-  "close_reason": null,
-  "resolution": null,
+  "updated_at": "2026-10-13T22:35:08.666965224Z",
+  "closed_at": "2026-10-13T22:35:08.666965224Z",
+  "close_reason": "Landed in 7d4cedd on dev. The past-the-end count comes from position() + 1, which sail-427b32 made possible.",
+  "resolution": "done",
   "notes": [],
   "stamps": {
     "created": {
       "commit": "c5f3fa2",
       "branch": "dev"
     },
-    "closed": null
+    "closed": {
+      "commit": "7d4cedd",
+      "branch": "dev"
+    }
   }
 }
