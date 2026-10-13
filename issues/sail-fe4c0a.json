@@ -3,7 +3,7 @@
   "title": "sail count and sail names rescan the input when a current index is beside it",
   "body": "`sail count` and `sail names` on the indexed backend never read the `.saidx` beside the input. `count.rs` calls `Index::build` and `names.rs` calls `Index::build_named`, so each run scans the whole input even when a current index file sits beside it. The commands that read through `indexed!` go through `index_of` in `input.rs`, which reads a current index.\n\n`index::count_in` reads the count from the index header alone. A named index file carries the names, so `names` could read them without touching the data file.\n\nFound while writing the test for sail-33353c. Those two commands do not refuse a stale index, because they never look at one.",
   "type": "bug",
-  "status": "in_progress",
+  "status": "closed",
   "priority": 3,
   "labels": [
     "sail"
@@ -12,19 +12,22 @@
   "blocked_by": [],
   "related": [],
   "assignee": "Jack Roddy/424f83e5",
-  "lease_expires": "2026-10-13T22:45:30.808768687Z",
+  "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-13T20:17:10.210370506Z",
-  "updated_at": "2026-10-13T22:30:30.808768687Z",
-  "closed_at": null,
-  "close_reason": null,
-  "resolution": null,
+  "updated_at": "2026-10-13T22:31:10.567187309Z",
+  "closed_at": "2026-10-13T22:31:10.567187309Z",
+  "close_reason": "Landed in 9ba892d on dev. A plain sail count on a file now reads the index by default, so a stale one is refused there too; the changelog says so.",
+  "resolution": "done",
   "notes": [],
   "stamps": {
     "created": {
       "commit": "9e8285d",
       "branch": "dev"
     },
-    "closed": null
+    "closed": {
+      "commit": "9ba892d",
+      "branch": "dev"
+    }
   }
 }
