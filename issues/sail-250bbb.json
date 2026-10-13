@@ -1,7 +1,7 @@
 {
   "id": "sail-250bbb",
   "title": "A comment on Reader's sentinel records the Read::chain trap",
-  "body": "scan and index::Reader seed a newline before byte 0 so a file opening with a delimiter needs no special case. The sentinel is per stream. Read::chain of two files therefore loses the first record of the second when the first file has no trailing newline. No comment or test says so. The buf field of Reader is the place for the comment. The memory sentinel-newline-is-per-stream holds the fact until then and goes once this lands.",
+  "body": "`scan` and `index::Reader` seed a newline before byte 0 so a file opening with a delimiter needs no special case. The sentinel is per stream. `Read::chain` of two files therefore loses the first record of the second when the first file has no trailing newline. No comment or test says so. The `buf` field of `Reader` is the place for the comment. The memory `sentinel-newline-is-per-stream` holds the fact until then and goes once this lands.",
   "type": "chore",
   "status": "open",
   "priority": 4,
@@ -15,7 +15,7 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-13T01:54:12.392101541Z",
-  "updated_at": "2026-10-13T01:54:12.392101541Z",
+  "updated_at": "2026-10-13T02:05:01.81328032Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
