@@ -19,9 +19,9 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-09T21:28:01.754931518Z",
-  "updated_at": "2026-10-13T20:41:59.070470709Z",
+  "updated_at": "2026-10-13T22:24:35.649452641Z",
   "closed_at": "2026-10-13T20:25:26.361650458Z",
-  "close_reason": "Landed in 7cd1e54 on dev. stale() returns Vec<usize>, as the last note explains.",
+  "close_reason": "Landed in b95c810 on the atlas branch, renamed to Atlas in b288f79. stale() returns Vec<usize>, as the notes explain.",
   "resolution": "done",
   "notes": [
     {
