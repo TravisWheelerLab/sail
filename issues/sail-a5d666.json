@@ -3,7 +3,7 @@
   "title": "Does Reader::over take paths, readers, or both?",
   "body": "`Reader::over` needs two passes over its sources: a count for `Selection` and a walk. A path can be opened twice. An open reader cannot be rewound.\n\n1. Paths only. Both passes work. Cost: a caller holding open readers cannot use it. No caller in `sail` holds one. stdin is one stream and `sail` already reads it whole.\n2. Readers only. Cost: no counting pass, so the caller supplies the count up front.\n3. Both. Cost: two constructors with different contracts for one type.\n\nLean: paths only. A constructor over the parts file from sail-a59d6f can come later as an addition.",
   "type": "decision",
-  "status": "open",
+  "status": "closed",
   "priority": 2,
   "labels": [
     "libsail"
@@ -15,16 +15,19 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-09T21:28:01.775915631Z",
-  "updated_at": "2026-10-13T02:05:01.790636064Z",
-  "closed_at": null,
-  "close_reason": null,
-  "resolution": null,
+  "updated_at": "2026-10-13T19:41:47.336999087Z",
+  "closed_at": "2026-10-13T19:41:47.336999087Z",
+  "close_reason": "Decided by Jack: paths only. Both passes reopen each path. A constructor over the parts file from sail-a59d6f can be added later.",
+  "resolution": "done",
   "notes": [],
   "stamps": {
     "created": {
       "commit": "06334a4",
       "branch": "main"
     },
-    "closed": null
+    "closed": {
+      "commit": "c5f3fa2",
+      "branch": "dev"
+    }
   }
 }
