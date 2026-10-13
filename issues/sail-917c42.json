@@ -16,9 +16,9 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-13T22:13:24.92206821Z",
-  "updated_at": "2026-10-13T22:18:05.837312062Z",
+  "updated_at": "2026-10-13T22:24:35.665246535Z",
   "closed_at": "2026-10-13T22:18:05.837312062Z",
-  "close_reason": "Landed in 8b33e03 on dev. The rules are in CLAUDE.md under Branches, Unstable code, Versions, Formats and checks.",
+  "close_reason": "Dropped for branches. The cfg gate landed and was removed again before anything was pushed. Unfinished API and format work now goes on a branch named for its milestone, per CLAUDE.md's Branches rule (a52734c). Atlas lives on the atlas branch.",
   "resolution": "done",
   "notes": [],
   "stamps": {
