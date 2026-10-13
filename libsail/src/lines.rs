@@ -71,6 +71,12 @@ pub struct Rows<R: Read> {
     /// The line the current row came from.
     line: u64,
 
+    /// The index of the current row.
+    position: Option<usize>,
+
+    /// How many rows [`advance`](Self::advance) has framed.
+    framed: usize,
+
     eof: bool,
 }
 
@@ -90,6 +96,8 @@ impl<R: Read> Rows<R> {
             span: 0,
             at: 1,
             line: 0,
+            position: None,
+            framed: 0,
             eof: false,
         }
     }
@@ -104,9 +112,15 @@ impl<R: Read> Rows<R> {
     }
 
     /// The current row's bytes, with no line ending. Empty before the first
-    /// [`advance`](Self::advance).
+    /// [`advance`](Self::advance) and after one returns `false`.
     pub fn row(&self) -> &[u8] {
         &self.buf[self.start..self.start + self.len]
+    }
+
+    /// The index of the current row, counting rows and not lines; `None` before
+    /// the first [`advance`](Self::advance) and after one returns `false`.
+    pub fn position(&self) -> Option<usize> {
+        self.position
     }
 
     /// The line the current row came from, counting from 1. Zero before the
@@ -126,6 +140,43 @@ impl<R: Read> Rows<R> {
 
     /// Advance to the next row. `false` at the end of the stream.
     pub fn advance(&mut self) -> Result<bool> {
+        let more = self.next_row()?;
+
+        if more {
+            self.position = Some(self.framed);
+            self.framed += 1;
+        } else {
+            // the last fill may have compacted the previous
+            // row's bytes away, so start no longer points at
+            // them
+            self.position = None;
+            self.len = 0;
+        }
+
+        Ok(more)
+    }
+
+    /// Advance until row `n` is current. `false` if the stream ends first.
+    ///
+    /// # Panics
+    ///
+    /// If row `n` is behind the current one, or behind the end of a stream
+    /// already reached.
+    pub fn advance_to(&mut self, n: usize) -> Result<bool> {
+        let floor = self.position.unwrap_or(self.framed);
+        assert!(n >= floor, "advance_to({n}) is behind row {floor}");
+
+        while self.framed <= n {
+            if !self.advance()? {
+                return Ok(false);
+            }
+        }
+
+        Ok(true)
+    }
+
+    /// Frame the next row that `skip` does not reject.
+    fn next_row(&mut self) -> Result<bool> {
         loop {
             match memchr(b'\n', &self.buf[self.cursor..self.filled]) {
                 Some(i) => {
@@ -598,5 +649,49 @@ mod tests {
 
         assert!(rows.advance().unwrap());
         assert_eq!(rows.row(), b"# not a comment here");
+    }
+
+    #[test]
+    fn position_counts_rows_where_line_counts_lines() {
+        let input = b"# head\na 1\n\n# mid\nb 2\n";
+        let mut rows = Rows::new(&input[..], hash);
+        assert_eq!(rows.position(), None);
+
+        assert!(rows.advance().unwrap());
+        assert_eq!((rows.position(), rows.line()), (Some(0), 2));
+
+        assert!(rows.advance().unwrap());
+        assert_eq!((rows.position(), rows.line()), (Some(1), 5));
+
+        assert!(!rows.advance().unwrap());
+        assert_eq!(rows.position(), None);
+        assert!(rows.row().is_empty());
+    }
+
+    #[test]
+    fn advance_to_lands_on_the_numbered_row() {
+        let input = b"# head\na\nb\n# mid\nc\nd\n";
+
+        for chunk in [1, 3, 4096] {
+            let mut rows = Rows::with_chunk(&input[..], hash, chunk);
+
+            for (n, want) in [(0, b"a"), (0, b"a"), (2, b"c"), (3, b"d")] {
+                assert!(rows.advance_to(n).unwrap(), "to {n} at chunk {chunk}");
+                assert_eq!(rows.position(), Some(n));
+                assert_eq!(rows.row(), want);
+            }
+
+            assert!(!rows.advance_to(4).unwrap());
+            assert_eq!(rows.position(), None);
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "advance_to(0) is behind row 1")]
+    fn advance_to_a_row_already_passed_panics() {
+        let mut rows = Rows::new(&b"a\nb\n"[..], hash);
+
+        rows.advance_to(1).unwrap();
+        rows.advance_to(0).unwrap();
     }
 }

@@ -1801,6 +1801,14 @@ fn build_for<R: Read>(bytes: R, format: Format) -> Result<Vec<Offset>> {
     }
 }
 
+/// How many records `bytes` holds, by one pass over them.
+pub fn count<R: Read>(bytes: R, format: Format) -> Result<usize> {
+    let mut reader = Reader::new(bytes, format);
+    while reader.advance()? {}
+
+    Ok(reader.framed)
+}
+
 /// One record's bytes at a time, framed out of a stream.
 ///
 /// Unlike [`build_index`], nothing is kept per record: a pass over a file
@@ -1844,6 +1852,12 @@ pub struct Reader<R: Read> {
     start: usize,
     len: usize,
 
+    /// The index of the current record.
+    position: Option<usize>,
+
+    /// How many records [`advance`](Self::advance) has framed.
+    framed: usize,
+
     eof: bool,
     started: bool,
     done: bool,
@@ -1873,6 +1887,8 @@ impl<R: Read> Reader<R> {
             cursor: 1,
             start: 1,
             len: 0,
+            position: None,
+            framed: 0,
             eof: false,
             started: false,
             done: false,
@@ -1914,9 +1930,16 @@ impl<R: Read> Reader<R> {
         self.format
     }
 
-    /// The current record's bytes; empty before the first [`advance`](Self::advance).
+    /// The current record's bytes; empty before the first [`advance`](Self::advance)
+    /// and after one returns `false`.
     pub fn record(&self) -> &[u8] {
         &self.buf[self.start..self.start + self.len]
+    }
+
+    /// The index of the current record; `None` before the first
+    /// [`advance`](Self::advance) and after one returns `false`.
+    pub fn position(&self) -> Option<usize> {
+        self.position
     }
 
     /// Where the current record sits in the stream.
@@ -1929,14 +1952,43 @@ impl<R: Read> Reader<R> {
 
     /// Advance to the next record. `false` at the end of the stream.
     pub fn advance(&mut self) -> Result<bool> {
-        if self.done {
-            return Ok(false);
+        let more = !self.done
+            && match self.kind {
+                Delimiter::Initiating => self.advance_initiating()?,
+                Delimiter::Terminating => self.advance_terminating()?,
+            };
+
+        if more {
+            self.position = Some(self.framed);
+            self.framed += 1;
+        } else {
+            // the last fill may have compacted the previous
+            // record's bytes away, so start no longer points
+            // at them
+            self.position = None;
+            self.len = 0;
         }
 
-        match self.kind {
-            Delimiter::Initiating => self.advance_initiating(),
-            Delimiter::Terminating => self.advance_terminating(),
+        Ok(more)
+    }
+
+    /// Advance until record `n` is current. `false` if the stream ends first.
+    ///
+    /// # Panics
+    ///
+    /// If record `n` is behind the current one, or behind the end of a stream
+    /// already reached.
+    pub fn advance_to(&mut self, n: usize) -> Result<bool> {
+        let floor = self.position.unwrap_or(self.framed);
+        assert!(n >= floor, "advance_to({n}) is behind record {floor}");
+
+        while self.framed <= n {
+            if !self.advance()? {
+                return Ok(false);
+            }
         }
+
+        Ok(true)
     }
 
     /// A record runs from its own delimiter to the next one, or to the end for
@@ -2212,6 +2264,110 @@ mod reader_tests {
             }
             assert_eq!(n, indexed(&bytes, format).len(), "{path}");
         }
+    }
+
+    const FIXTURES: [(&str, Format); 3] = [
+        (fixture!("proteins.fa"), Format::Fasta),
+        (fixture!("families.sto"), Format::Stockholm),
+        (fixture!("models.hmm"), Format::Hmm),
+    ];
+
+    #[test]
+    fn position_names_the_record_the_reader_holds() {
+        for (path, format) in FIXTURES {
+            let bytes = std::fs::read(path).unwrap();
+            let want = indexed(&bytes, format);
+
+            for chunk in [1, 7, 64, 4096] {
+                let mut reader = Reader::with_chunk(&bytes[..], format, chunk);
+                assert_eq!(reader.position(), None, "{path} before the first advance");
+
+                let mut n = 0;
+                while reader.advance().unwrap() {
+                    assert_eq!(reader.position(), Some(n), "{path} at chunk {chunk}");
+                    assert_eq!(reader.record(), want[n].1, "{path} record {n}");
+                    n += 1;
+                }
+
+                assert_eq!(n, want.len(), "{path} at chunk {chunk}");
+                assert_eq!(reader.position(), None, "{path} past the end");
+            }
+        }
+    }
+
+    #[test]
+    fn advance_to_lands_on_the_numbered_record() {
+        for (path, format) in FIXTURES {
+            let bytes = std::fs::read(path).unwrap();
+            let want = indexed(&bytes, format);
+            let last = want.len() - 1;
+
+            for chunk in [1, 7, 64, 4096] {
+                let mut reader = Reader::with_chunk(&bytes[..], format, chunk);
+
+                // 0 on a fresh reader frames a record rather
+                // than taking the empty one as record 0, and
+                // the repeat is a no-op on the current record
+                for n in [0, 0, 1, last, last] {
+                    assert!(reader.advance_to(n).unwrap(), "{path} to {n}");
+                    assert_eq!(reader.position(), Some(n), "{path} to {n}");
+                    assert_eq!(reader.record(), want[n].1, "{path} to {n}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn advance_to_past_the_end_holds_nothing() {
+        for (path, format) in FIXTURES {
+            let bytes = std::fs::read(path).unwrap();
+            let held = indexed(&bytes, format).len();
+            let mut reader = Reader::with_chunk(&bytes[..], format, 7);
+
+            assert!(!reader.advance_to(held).unwrap(), "{path}");
+            assert_eq!(reader.position(), None, "{path}");
+            assert!(reader.record().is_empty(), "{path}");
+
+            assert!(!reader.advance_to(held + 10).unwrap(), "{path} once more");
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "advance_to(1) is behind record 2")]
+    fn advance_to_a_record_already_passed_panics() {
+        let bytes = std::fs::read(fixture!("proteins.fa")).unwrap();
+        let mut reader = Reader::new(&bytes[..], Format::Fasta);
+
+        reader.advance_to(2).unwrap();
+        reader.advance_to(1).unwrap();
+    }
+
+    #[test]
+    fn a_reader_past_the_end_of_a_terminating_format_holds_no_stale_bytes() {
+        // the bytes after the last delimiter make the final
+        // advance refill the buffer, and the refill compacts
+        // the last record's bytes away
+        let bytes = b"# STOCKHOLM 1.0\na A\n//\ntrailing bytes past the end\n";
+        let mut reader = Reader::with_chunk(&bytes[..], Format::Stockholm, 4);
+
+        assert!(reader.advance().unwrap());
+        assert!(!reader.advance().unwrap());
+        assert!(reader.record().is_empty());
+    }
+
+    #[test]
+    fn count_agrees_with_the_records_build_index_frames() {
+        for (path, format) in FIXTURES {
+            let bytes = std::fs::read(path).unwrap();
+
+            assert_eq!(
+                count(&bytes[..], format).unwrap(),
+                indexed(&bytes, format).len(),
+                "{path}"
+            );
+        }
+
+        assert_eq!(count(&b""[..], Format::Fasta).unwrap(), 0);
     }
 }
 

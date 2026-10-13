@@ -17,9 +17,19 @@ cargo's reading of it below 1.0: the **minor** is the breaking axis, so 0.2 to
   `map(path, format)` maps the file instead of reading it. `record(n)` hands
   back one record's framed bytes and `name_index` names them, so a caller with
   a parser of its own reads a file the way the disk-backed collections do.
+- `index::count(bytes, format)`, the number of records in a stream, by one pass
+  over it.
+- `Reader::position()` and `Reader::advance_to(n)`. `position()` is the index of
+  the record `record()` returns. It is `None` before the first `advance` and
+  after one returns `false`. `advance_to(n)` advances until record `n` is
+  current, and panics if record `n` is already behind the reader. `lines::Rows`
+  gains the same two methods, counting rows.
 
 ### Changed
 
+- `Reader::record()` and `Rows::row()` are empty after `advance` returns
+  `false`. On Stockholm and HMM, `Reader::record()` used to return bytes that
+  the final refill had already moved.
 - `IndexedFasta`, `IndexedStockholm` and `IndexedHmm` each hold a `Framed<S>`
   and forward `index`, `name_index` and `record` to it, where each used to
   carry its own copy of the source and the index. No signature moved.

@@ -65,22 +65,15 @@ impl SkimArgs {
                 let held = total(entry, inputs.format())?;
                 let n = draw_size(count, fraction, held)?;
 
-                let mut drawn = Selection::new(held, n, seed).peekable();
                 let mut reader = Reader::new(entry.reader()?, inputs.format());
-                let mut at = 0;
                 let mut out = out;
 
-                while reader.advance()? {
-                    // peek rather than a running skip count:
-                    // the selection is already ascending, so
-                    // the next index it names is the next one
-                    // to keep
-                    if drawn.peek() == Some(&at) {
-                        drawn.next();
-                        write_framed(inputs.format(), reader.record(), &mut out)?;
+                for at in Selection::new(held, n, seed) {
+                    if !reader.advance_to(at)? {
+                        break;
                     }
 
-                    at += 1;
+                    write_framed(inputs.format(), reader.record(), &mut out)?;
                 }
 
                 out.flush()?;
@@ -134,12 +127,5 @@ fn total(entry: &Input, format: Format) -> Result<usize> {
         }
     }
 
-    let mut reader = Reader::new(entry.reader()?, format);
-    let mut held = 0;
-
-    while reader.advance()? {
-        held += 1;
-    }
-
-    Ok(held)
+    Ok(libsail::index::count(entry.reader()?, format)?)
 }

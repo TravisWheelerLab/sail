@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use anyhow::Result;
 use clap::Args;
 use libsail::collection::Indexable;
-use libsail::index::{Index, Reader};
+use libsail::index::Index;
 
 use crate::cli::{FormatArg, ReadArgs};
 use crate::input::{Backend, Inputs, Needs, dispatch};
@@ -44,16 +44,7 @@ impl CountArgs {
                 // nothing is parsed: the frames are counted
                 // and the bytes of each are dropped as the
                 // next one overwrites them
-                Backend::Stream => {
-                    let mut reader = Reader::new(entry.reader()?, inputs.format());
-                    let mut n = 0;
-
-                    while reader.advance()? {
-                        n += 1;
-                    }
-
-                    n
-                }
+                Backend::Stream => libsail::index::count(entry.reader()?, inputs.format())?,
                 Backend::Indexed => Index::build(entry.reader()?, inputs.format())?.len(),
                 Backend::Memory => dispatch!(inputs.format(), entry, |collection| collection.len()),
             };
