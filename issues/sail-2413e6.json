@@ -3,7 +3,7 @@
   "title": "sail atlas writes an atlas over several files",
   "body": "`sail index` takes one file and writes one `.saidx`, beside the file or at `-o`. `libsail::atlas::Atlas` (sail-a59d6f) lists several indexed files in order, with a stamp and a record count for each, in a `.satlas` file. No command writes one.\n\n## Proposal\n\nA new subcommand, separate from `sail index`:\n\n```console\n$ sail atlas a.fa b.fa c.fa -o all.satlas\n```\n\n- It calls `Atlas::build`, which writes a named `.saidx` beside each input that lacks a current one and reuses the rest. It then writes the atlas to `-o`.\n- `-o` is required. A default named after one input would misdescribe a list of several.\n- One format covers every input: `--format`, or the format of the first input. An input of another format is an error.\n- `-` is refused, since an atlas lists paths.\n- It prints one line, `<n> <format> records in <p> files listed in <path>`.\n- Running it again over the same inputs is how a stale part is fixed (sail-978552).\n\n## Rejected\n\n- `sail index` with several inputs and `-o` naming the atlas. `-o` would mean a `.saidx` path for one input and an atlas for several, and an atlas of one file could not be written.\n- `sail index --manifest PATH`. It keeps `-o` single-meaning but puts two outputs on one command. Splitting the commands gives each one meaning: `sail index` for one file, `sail atlas` for several.\n\n## Cost\n\nA new subcommand. No existing command line changes.",
   "type": "feature",
-  "status": "in_progress",
+  "status": "closed",
   "priority": 3,
   "labels": [
     "sail"
@@ -14,19 +14,22 @@
   ],
   "related": [],
   "assignee": "Jack Roddy/424f83e5",
-  "lease_expires": "2026-10-13T20:57:19.800203226Z",
+  "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-09T21:28:01.76535608Z",
-  "updated_at": "2026-10-13T20:42:19.800203226Z",
-  "closed_at": null,
-  "close_reason": null,
-  "resolution": null,
+  "updated_at": "2026-10-13T20:50:26.137746102Z",
+  "closed_at": "2026-10-13T20:50:26.137746102Z",
+  "close_reason": "Landed in 2170fd0 on dev. Reading an atlas is sail-4d86c8.",
+  "resolution": "done",
   "notes": [],
   "stamps": {
     "created": {
       "commit": "06334a4",
       "branch": "main"
     },
-    "closed": null
+    "closed": {
+      "commit": "2170fd0",
+      "branch": "dev"
+    }
   }
 }
