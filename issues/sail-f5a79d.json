@@ -3,7 +3,7 @@
   "title": "One index-file version bump for alignment and the parts file, or two?",
   "body": "Padding the header for alignment (sail-bb932e) and adding the parts file (sail-a59d6f) both change what sits on disk.\n\n1. One bump: land both as `VERSION = 2`. One older layout to keep reading.\n2. Two bumps: each lands on its own. Two older layouts to read for as long as the format exists.\n\nLean: the question dissolves if sail-9d931d goes by reference. The parts file is then its own file with its own magic and version. The `.saidx` layout changes once, for alignment.",
   "type": "decision",
-  "status": "open",
+  "status": "closed",
   "priority": 3,
   "labels": [
     "libsail"
@@ -15,16 +15,19 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-09T21:28:01.808261489Z",
-  "updated_at": "2026-10-13T02:05:01.805828314Z",
-  "closed_at": null,
-  "close_reason": null,
-  "resolution": null,
+  "updated_at": "2026-10-13T20:15:40.329638854Z",
+  "closed_at": "2026-10-13T20:15:40.329638854Z",
+  "close_reason": "Dissolved by sail-9d931d going by reference. The parts file is its own file with its own magic and version, so .saidx changes once, for alignment (sail-bb932e).",
+  "resolution": "done",
   "notes": [],
   "stamps": {
     "created": {
       "commit": "06334a4",
       "branch": "main"
     },
-    "closed": null
+    "closed": {
+      "commit": "9e8285d",
+      "branch": "dev"
+    }
   }
 }
