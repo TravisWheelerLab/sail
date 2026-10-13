@@ -1,7 +1,7 @@
 {
   "id": "sail-2413e6",
   "title": "sail index takes several inputs and an explicit -o",
-  "body": "sail index takes a single path and derives its output from it. Exposing an index over several files means several inputs and an explicit -o. This is the CLI half of the parts-file work and waits on it.",
+  "body": "`sail index` takes a single path and derives its output from it. Exposing an index over several files means several inputs and an explicit `-o`. This is the CLI half of the parts-file work (sail-a59d6f) and waits on it.",
   "type": "feature",
   "status": "open",
   "priority": 3,
@@ -17,7 +17,7 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-09T21:28:01.76535608Z",
-  "updated_at": "2026-10-09T21:38:00.361714669Z",
+  "updated_at": "2026-10-13T02:04:06.546563867Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
