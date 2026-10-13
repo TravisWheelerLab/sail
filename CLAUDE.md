@@ -41,6 +41,9 @@ as a reason to find a third design.
 cost, remove it rather than keep it in a cheaper form. Raise a concern only if
 removing it breaks something the task needs.
 
+**Read order before memory.** Judge any combinator that selects or reorders
+records first by the order of the reads it causes, then by what it allocates.
+
 ## vocabulary
 
 The word "sidecar" is banned from this project: source, comments, tests,
@@ -83,7 +86,8 @@ in `Cargo.toml` stay where they are and changelog entries accumulate under
 `## [Unreleased]` with `### Added` / `### Changed` / `### Removed` headings and
 no date. The version heading, the date, the `Cargo.toml` bumps and the compare
 link at the foot of the changelog are all part of the release commit. Release
-tags are annotated and named `<crate>-v<version>`.
+tags are annotated and named `<crate>-v<version>`. Publish from `main` after
+`dev` merges in, with a clean tree.
 
 **Versions.** Each crate is versioned by what changed in it, and the two are
 never aligned for tidiness. A break in `libsail` moves `libsail`'s minor, under
