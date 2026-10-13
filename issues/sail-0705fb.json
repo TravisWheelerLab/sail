@@ -8,7 +8,7 @@
   "labels": [
     "libsail"
   ],
-  "parent": "sail-31fdd9",
+  "parent": null,
   "blocked_by": [
     "sail-317db4",
     "sail-a5d666"
@@ -18,7 +18,7 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-10-09T21:28:01.73339981Z",
-  "updated_at": "2026-10-09T21:38:00.349660496Z",
+  "updated_at": "2026-10-13T00:16:31.686652803Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
