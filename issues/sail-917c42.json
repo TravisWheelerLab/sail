@@ -1,0 +1,31 @@
+{
+  "id": "sail-917c42",
+  "title": "Unpromised code is gated behind a sail_unstable cfg",
+  "body": "Every commit on `dev` reaches `main` whole when a release is cut, and from there crates.io. Nothing separates work that has landed from work that is promised. `libsail::atlas::Atlas` and `sail atlas` are on `dev`, but the `.satlas` layout waits on sail-dfcb07 and nothing reads an atlas yet (sail-4d86c8), so neither should ship in the next `libsail` release.\n\n## Proposal\n\n- A rustc cfg, `sail_unstable`, set for the workspace in `.cargo/config.toml`. Code not ready to promise sits behind `#[cfg(sail_unstable)]`, and so does every item that uses it. A crates.io build, `cargo install`, and docs.rs compile without it.\n- The checks run once as today and again with `RUSTFLAGS=` set, which clears the cfg, so the build a user gets is the one tested.\n- `cargo semver-checks` before a release says whether the bump is a patch or a minor.\n- `main` takes a merge when a crate is released. The tree compiles and tests pass with and without the cfg, and whatever should not ship is gated. Unreleased ungated code of the other crate may come along.\n- An old on-disk layout's reader arm is kept by default and may be dropped at a breaking release, listed under `### Removed`.\n\n`Atlas`, `sail atlas` and their tests are the first gated items.",
+  "type": "chore",
+  "status": "open",
+  "priority": 1,
+  "labels": [
+    "libsail",
+    "sail"
+  ],
+  "parent": null,
+  "blocked_by": [],
+  "related": [],
+  "assignee": null,
+  "lease_expires": null,
+  "defer_until": null,
+  "created_at": "2026-10-13T22:13:24.92206821Z",
+  "updated_at": "2026-10-13T22:13:24.92206821Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
+  "notes": [],
+  "stamps": {
+    "created": {
+      "commit": "473397a",
+      "branch": "dev"
+    },
+    "closed": null
+  }
+}
