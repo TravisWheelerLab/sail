@@ -3,7 +3,7 @@
   "title": "`name_index` takes 0.8 s on 2.4M fasta records, all on one thread",
   "body": "`name_index()` on a mapped `Framed` (`index.rs`, `Framed::name_index`) gives the index its names. It passes a closure to `Index::name_with`, and the closure reads each record's bytes through `Source::range` and finds the name with `seq::name_of`. `name_with` then does three things, all on one thread:\n\n- It takes each name as `Cow::Owned(name.to_vec())`, one allocation per record. The closure has to own the name because `name_with`'s closure type ties the returned `Cow` to the `&Offset` and not to the source, so a slice borrowed from the map cannot be returned.\n- It copies each name onto `blob`, one concatenated `Vec<u8>`, and records a start and length per record in `spans`.\n- It fills `by_name` with every named record's position as a `u32`, then stable-sorts it with `sort_by`. Each comparison looks both names up in `blob`.\n\nnail measured it while timing its own input indexing. On a fasta of 2,455,940 MGnify records, about 535 MB, with a warm page cache on a 16-core x86_64 box:\n\n| step | seconds |\n|---|---|\n| `Framed::map` | 0.07 |\n| `Framed::map`, then `name_index()` | 0.87 to 0.94 |\n\nSo naming costs about 0.8 s. Nobody has measured how that splits between the copies and the sort. A sort of 2.4M entries makes about 50M comparisons, and each one reads two names at scattered places in `blob`. That pattern likely misses the cache. In nail, a binary search per record over the same `by_name` cost about 950 ns per record for the same reason. The sort is the likely main cost, though that has not been checked. At the MGnify scale of about 2.456 billion records, the same cost would be on the order of 800 s if it scales linearly. Nobody has measured that either.\n\nnail calls `Index::name` for its output and no longer calls `Index::position`, so nothing in nail reads `by_name` today.\n\n## Proposal\n\nMeasure the split first, then choose among these:\n\n| option | what changes | cost |\n|---|---|---|\n| A. borrow from the source | `name_with`'s closure may return a name borrowed from the source, so a mapped source copies each name once, into `blob` | a changed signature on public `Index::name_with`, which is breaking |\n| B. parallel sort | `par_sort_by` in place of `sort_by`; rayon's version is stable, so `position` keeps answering with the first of a repeated name | `rayon` as a `libsail` dependency, or behind a feature |\n| C. names without the order | a way to build `blob` and `spans` without `by_name`, for a caller that only reads names | a new public method, and an index whose `position` cannot answer |\n\n## Open\n\n- C conflicts with option C of sail-c04fbf, which reports repeated names from `by_name` and so needs the sort on every naming. If that decision lands on reporting, the sort is no longer optional, and B is the option that helps.\n- Whether the `Source::range` scan, done one record at a time, costs anything worth measuring next to the sort.",
   "type": "task",
-  "status": "open",
+  "status": "in_progress",
   "priority": 3,
   "labels": [
     "libsail"
@@ -11,11 +11,11 @@
   "parent": null,
   "blocked_by": [],
   "related": [],
-  "assignee": null,
-  "lease_expires": null,
+  "assignee": "Jack Roddy/424f83e5",
+  "lease_expires": "2026-10-14T20:41:16.706631402Z",
   "defer_until": null,
   "created_at": "2026-10-14T20:13:52.794427359Z",
-  "updated_at": "2026-10-14T20:13:52.794427359Z",
+  "updated_at": "2026-10-14T20:26:16.706631402Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
