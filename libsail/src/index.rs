@@ -12,6 +12,7 @@ use std::borrow::Cow;
 use std::ffi::OsString;
 use std::fs::File;
 use std::io::{BufReader, BufWriter, Read, Write};
+use std::num::NonZeroU64;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -465,17 +466,126 @@ struct Names {
 }
 
 /// Where one name sits in [`Names::blob`].
+//
+// one word per record, where a u64 and a u32 under an
+// Option take 24 bytes:
+//
+//     bit  63       set, so the word is never zero and
+//                   Option<Span> stays 8 bytes
+//     bits 17..63   start, below MAX_BLOB
+//     bits  0..17   len, at most MAX_NAME
+//
 #[derive(Clone, Copy, Debug, PartialEq)]
-struct Span {
-    start: u64,
-    len: u32,
+struct Span(NonZeroU64);
+
+const LEN_BITS: u32 = 17;
+
+/// The most bytes of names one index holds.
+const MAX_BLOB: u64 = 1 << 46;
+
+const _: () = assert!(MAX_NAME < 1 << LEN_BITS);
+
+impl Span {
+    fn new(start: u64, len: u32) -> Span {
+        debug_assert!(start + len as u64 <= MAX_BLOB && len as usize <= MAX_NAME);
+
+        Span(NonZeroU64::new(1 << 63 | start << LEN_BITS | len as u64).expect("bit 63 is set"))
+    }
+
+    fn start(self) -> u64 {
+        (self.0.get() & !(1 << 63)) >> LEN_BITS
+    }
+
+    fn len(self) -> u32 {
+        (self.0.get() & ((1 << LEN_BITS) - 1)) as u32
+    }
+}
+
+/// The name `span` frames.
+fn name_at(blob: &[u8], span: Span) -> &[u8] {
+    &blob[span.start() as usize..][..span.len() as usize]
 }
 
 /// The name `span` frames, or `None` where a record carries none.
 fn name_in(blob: &[u8], span: Option<Span>) -> Option<&[u8]> {
-    let span = span?;
+    Some(name_at(blob, span?))
+}
 
-    Some(&blob[span.start as usize..][..span.len as usize])
+/// A name layer built one record at a time, in file order.
+#[derive(Default)]
+struct NameBuilder {
+    blob: Vec<u8>,
+    spans: Vec<Option<Span>>,
+}
+
+impl NameBuilder {
+    fn with_capacity(records: usize) -> NameBuilder {
+        NameBuilder {
+            blob: Vec::new(),
+            spans: Vec::with_capacity(records),
+        }
+    }
+
+    /// Add the next record's name, `None` for a record that carries none.
+    fn push(&mut self, name: Option<&[u8]>) -> Result<()> {
+        let Some(name) = name else {
+            self.spans.push(None);
+
+            return Ok(());
+        };
+
+        if name.len() > MAX_NAME {
+            bail_parse!(
+                "a record name of {} bytes exceeds the {MAX_NAME} an index holds",
+                name.len()
+            )
+        }
+
+        let start = self.blob.len() as u64;
+        if start + name.len() as u64 > MAX_BLOB {
+            bail_parse!("record names past {MAX_BLOB} bytes exceed what an index holds")
+        }
+
+        self.spans.push(Some(Span::new(start, name.len() as u32)));
+        self.blob.extend_from_slice(name);
+
+        Ok(())
+    }
+
+    fn finish(self) -> Names {
+        let NameBuilder { blob, spans } = self;
+
+        // each entry carries its span, so a comparison
+        // reads the blob straight away. looking the span up
+        // through spans[n] cost a second cache miss per
+        // side: 0.70 s against 0.23 s on 2.4M names in
+        // shuffled order
+        let mut keyed: Vec<(Span, u32)> = spans
+            .iter()
+            .enumerate()
+            .filter_map(|(n, span)| Some(((*span)?, n as u32)))
+            .collect();
+
+        // unstable, with the position breaking ties, which is
+        // the stable order: equal names stay in file order
+        // and position answers with the first of a repeat --
+        // the rule collection::Indexable::index_by follows
+        keyed.sort_unstable_by(|&(a, m), &(b, n)| {
+            name_at(&blob, a).cmp(name_at(&blob, b)).then(m.cmp(&n))
+        });
+
+        // copied out rather than collected in place, which
+        // would keep keyed's 16-byte slots as by_name's
+        // allocation
+        let mut by_name = Vec::with_capacity(keyed.len());
+        by_name.extend(keyed.iter().map(|&(_, n)| n));
+
+        Names {
+            blob,
+            spans,
+            by_name,
+        }
+    }
 }
 
 impl Names {
@@ -604,10 +714,24 @@ impl Index {
     where
         F: for<'a> FnMut(&'a Offset) -> Result<Option<Cow<'a, [u8]>>>,
     {
+        let offsets = self.nameable()?;
+        let mut names = NameBuilder::with_capacity(offsets.len());
+
+        for offset in offsets {
+            names.push(name_of(offset)?.as_deref())?;
+        }
+
+        self.attach(names.finish());
+
+        Ok(())
+    }
+
+    /// The offsets of an index that can take a name layer.
+    fn nameable(&self) -> Result<&[Offset]> {
         // naming walks every record, and the layer it
         // builds has nowhere to go in a file already
         // written
-        let Body::Memory { offsets, names } = &mut self.body else {
+        let Body::Memory { offsets, .. } = &self.body else {
             bail_parse!("an index opened in place cannot be named, only one read whole")
         };
 
@@ -618,47 +742,16 @@ impl Index {
             )
         }
 
-        let mut blob = Vec::new();
-        let mut spans = Vec::with_capacity(offsets.len());
+        Ok(offsets)
+    }
 
-        for offset in offsets.iter() {
-            let Some(name) = name_of(offset)? else {
-                spans.push(None);
-                continue;
-            };
+    /// Attach a name layer, once [`nameable`](Self::nameable) has passed.
+    fn attach(&mut self, built: Names) {
+        let Body::Memory { names, .. } = &mut self.body else {
+            unreachable!("nameable refuses an index opened in place")
+        };
 
-            if name.len() > MAX_NAME {
-                bail_parse!(
-                    "a record name of {} bytes exceeds the {MAX_NAME} an index holds",
-                    name.len()
-                )
-            }
-
-            spans.push(Some(Span {
-                start: blob.len() as u64,
-                len: name.len() as u32,
-            }));
-            blob.extend_from_slice(&name);
-        }
-
-        let mut by_name: Vec<u32> = (0..spans.len() as u32)
-            .filter(|&n| spans[n as usize].is_some())
-            .collect();
-
-        // stable, so equal names stay in file order and
-        // position answers with the first of a repeat -- the
-        // rule collection::Indexable::index_by follows
-        by_name.sort_by(|&a, &b| {
-            name_in(&blob, spans[a as usize]).cmp(&name_in(&blob, spans[b as usize]))
-        });
-
-        *names = Some(Names {
-            blob,
-            spans,
-            by_name,
-        });
-
-        Ok(())
+        *names = Some(built);
     }
 
     /// Index every record in `bytes`.
@@ -677,7 +770,7 @@ impl Index {
     pub fn build_named<R: Read>(bytes: R, format: Format) -> Result<Index> {
         let mut reader = Reader::new(bytes, format);
         let mut offsets = Vec::new();
-        let mut names: Vec<Option<Vec<u8>>> = Vec::new();
+        let mut names = NameBuilder::default();
 
         while reader.advance()? {
             offsets.push(reader.offset());
@@ -685,23 +778,13 @@ impl Index {
             // read out of the reader's buffer while the
             // record is still in it: naming afterwards
             // through name_with re-reads every record this
-            // pass already walked, one allocation and one
-            // pread at a time
-            names.push(crate::seq::name_of(format, reader.record()).map(<[u8]>::to_vec));
+            // pass already walked, one pread at a time
+            names.push(crate::seq::name_of(format, reader.record()))?;
         }
 
         let mut index = Index::new(format, offsets);
-
-        // name_with owns the blob, the spans and the
-        // ordering, so the names are handed to it rather than
-        // assembled here twice
-        let mut at = 0;
-        index.name_with(|_| {
-            let name = names[at].take();
-            at += 1;
-
-            Ok(name.map(Cow::Owned))
-        })?;
+        index.nameable()?;
+        index.attach(names.finish());
 
         Ok(index)
     }
@@ -811,7 +894,7 @@ impl Index {
 
         for span in &names.spans {
             let (present, start, len) = match span {
-                Some(s) => (1u8, s.start, s.len),
+                Some(s) => (1u8, s.start(), s.len()),
                 None => (0, 0, 0),
             };
 
@@ -970,6 +1053,9 @@ fn narrow(n: u64) -> Result<usize> {
 
 fn read_names<R: Read>(r: &mut R, count: usize) -> Result<Names> {
     let blob_len = u64::from_le_bytes(take(r)?);
+    if blob_len > MAX_BLOB {
+        bail_parse!("an index of {blob_len} bytes of names exceeds the {MAX_BLOB} one holds")
+    }
 
     // take + read_to_end rather than a reserve: the length
     // is uncorroborated, so the buffer grows with what the
@@ -1027,7 +1113,7 @@ fn read_span<R: Read>(r: &mut R, blob_len: usize) -> Result<Option<Span>> {
                 bail_parse!("a name at {start} of {len} bytes runs past the {blob_len} stored")
             }
 
-            Ok(Some(Span { start, len }))
+            Ok(Some(Span::new(start, len)))
         }
         other => bail_parse!("a name is present or it is not, and this record says {other}"),
     }
@@ -1631,6 +1717,41 @@ mod tests {
         assert_eq!(index.position(b"a").unwrap(), Some(1));
         assert_eq!(index.position(b"b").unwrap(), Some(0));
         assert_eq!(index.position(b"c").unwrap(), Some(3));
+    }
+
+    #[test]
+    fn many_repeats_in_scrambled_order_each_answer_with_their_first_record() {
+        // past the length an unstable sort finishes by
+        // insertion, so the tie-break on position is what
+        // keeps a repeat in file order
+        let names: Vec<Vec<u8>> = (0..1000u32)
+            .map(|n| format!("r{}", n * 7919 % 13).into_bytes())
+            .collect();
+        let mut index = Index::new(
+            Format::Fasta,
+            (0..names.len()).map(|n| off(n as u64 * 10, 10)).collect(),
+        );
+
+        index
+            .name_with(|o| Ok(Some(Cow::Owned(names[o.start as usize / 10].clone()))))
+            .unwrap();
+
+        for name in &names {
+            let first = names.iter().position(|n| n == name);
+            assert_eq!(index.position(name).unwrap(), first);
+        }
+    }
+
+    #[test]
+    fn a_span_at_the_limits_unpacks_to_what_was_packed() {
+        assert_eq!(std::mem::size_of::<Option<Span>>(), 8);
+
+        let start = MAX_BLOB - MAX_NAME as u64;
+        let span = Span::new(start, MAX_NAME as u32);
+        assert_eq!((span.start(), span.len()), (start, MAX_NAME as u32));
+
+        let empty = Span::new(0, 0);
+        assert_eq!((empty.start(), empty.len()), (0, 0));
     }
 
     #[test]
@@ -2917,17 +3038,21 @@ impl<S: Source> Framed<S> {
     /// Name every record, by a byte scan of the range the index frames rather
     /// than a parse of it.
     pub fn name_index(&mut self) -> Result<()> {
-        // the fields are borrowed apart because name_with
-        // takes &mut self.index while the scan reads
-        // self.source
-        let source = &self.source;
         let format = self.index.format();
+        let offsets = self.index.nameable()?;
+        let mut names = NameBuilder::with_capacity(offsets.len());
 
-        self.index.name_with(|o| {
-            let bytes = source.range(o.start, o.n_bytes)?;
+        // pushed straight from the range rather than through
+        // name_with, whose closure has to return an owned
+        // copy of every name
+        for o in offsets {
+            let bytes = self.source.range(o.start, o.n_bytes)?;
+            names.push(crate::seq::name_of(format, &bytes))?;
+        }
 
-            Ok(crate::seq::name_of(format, &bytes).map(|name| Cow::Owned(name.to_vec())))
-        })
+        self.index.attach(names.finish());
+
+        Ok(())
     }
 
     /// The `n`th record's framed bytes, or `None` past the end.

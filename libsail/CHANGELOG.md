@@ -9,6 +9,15 @@ cargo's reading of it below 1.0: the **minor** is the breaking axis, so 0.2 to
 
 ## [Unreleased]
 
+### Changed
+
+- `Framed::name_index`, `Index::build_named` and `Index::name_with` sort a
+  file's names about three times faster when the file is not in name order. On
+  2.4 million FASTA records, `name_index` took 0.26 s where it took 0.94 s.
+- An index in memory spends 8 bytes on each record's name location, where it
+  spent 24. `Index::build_named` no longer holds a separate copy of every name
+  while it reads. Its peak memory on the same file fell from 274 MB to 150 MB.
+
 ## [0.4.1] - 2026-10-13
 
 A streaming `Reader` reports the index of the record it holds and can advance
