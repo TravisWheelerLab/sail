@@ -1,0 +1,30 @@
+{
+  "id": "sail-c04fbf",
+  "title": "Should naming an index check for repeated record names?",
+  "body": "`Index::name_with` builds an index's name layer, and `Index::build_named` calls it while reading a file once. Neither checks whether two records share a name. A repeated name is stored twice, and `Index::position(name)` answers with the first record that carries it. The test `position_returns_the_first_of_a_repeated_name` pins that rule, and `collection::Indexable::index_by` follows it too. A caller asking `position` for a repeated name gets the first record and no sign that another exists.\n\nThe check would cost one pass. `name_with` already sorts `by_name`, the list of named records' positions ordered by name, and the sort is stable. After it, equal names sit next to each other. Comparing each entry with the one before it finds every repeat and allocates nothing.\n\n## Options\n\n| option | what changes | cost |\n|---|---|---|\n| A. no check | nothing | a repeat stays invisible to every caller |\n| B. always refuse | `name_with` returns an error naming the first repeated name | a file with a repeat gets no named index at all, and `sail index` refuses files it accepts today |\n| C. report it | the index keeps how many names repeat, and a new method returns that | one pass over `by_name`, and one new public method |\n| D. a flag | `name_with` and `build_named` take a bool saying whether to refuse | a changed signature on two public functions, and a bool at every call site |\n\nC is the lean. A file with repeated names can still be read by position, and `position` has a defined answer for it. Under B, `libsail` would refuse that file for every caller, including one that does not care. C makes the reaction optional and leaves it to the caller. The check itself always runs, since skipping it saves nothing. D makes the check optional, which buys nothing for the same reason, and it costs a signature change.\n\n## Cost\n\nUnder C, an index read whole with `Index::read` or built in memory answers from `by_name` with no format change. The new method is an addition, so `cargo semver-checks` should accept it in a patch release.\n\n## Open\n\n- An index attached with `Index::open` leaves its names in the file. Counting repeats there reads every name through `pread`. Storing the count in the index file's header avoids that read, but it changes the layout and bumps the format's version byte.\n- Whether the method returns a count, or the first repeated name so an error message can name it.\n- What `sail` does with the answer: a warning from `sail index`, a refusal, or a flag. That changes `sail`'s command line, and it gets its own issue once this one is settled.",
+  "type": "decision",
+  "status": "open",
+  "priority": 3,
+  "labels": [
+    "libsail"
+  ],
+  "parent": null,
+  "blocked_by": [],
+  "related": [],
+  "assignee": null,
+  "lease_expires": null,
+  "defer_until": null,
+  "created_at": "2026-10-14T20:01:23.665928268Z",
+  "updated_at": "2026-10-14T20:01:23.665928268Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
+  "notes": [],
+  "stamps": {
+    "created": {
+      "commit": "8d6dbd6",
+      "branch": "dev"
+    },
+    "closed": null
+  }
+}
