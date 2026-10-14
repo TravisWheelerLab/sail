@@ -9,6 +9,12 @@ cargo's reading of it below 1.0: the **minor** is the breaking axis, so 0.2 to
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-10-14
+
+`Framed::name_index`, `Index::build_named` and `Index::name_with` sort names
+about three times faster on a file that is not in name order. A named index
+takes less memory.
+
 ### Changed
 
 - `Framed::name_index`, `Index::build_named` and `Index::name_with` sort a
@@ -17,6 +23,8 @@ cargo's reading of it below 1.0: the **minor** is the breaking axis, so 0.2 to
 - An index in memory spends 8 bytes on each record's name location, where it
   spent 24. `Index::build_named` no longer holds a separate copy of every name
   while it reads. Its peak memory on the same file fell from 274 MB to 150 MB.
+- Naming an index, or reading one from its file, refuses more than 2^46 bytes
+  (64 TiB) of names. 0.4.1 set no limit.
 
 ## [0.4.1] - 2026-10-13
 
@@ -199,7 +207,8 @@ read one record at a time.
 First release: FASTA, Stockholm, HMMER3 p7hmm and the BLAST, HMMER and nail hit
 tables, with the `collection`, `parse` and `source` layers behind them.
 
-[Unreleased]: https://github.com/TravisWheelerLab/sail/compare/libsail-v0.4.1...HEAD
+[Unreleased]: https://github.com/TravisWheelerLab/sail/compare/libsail-v0.4.2...HEAD
+[0.4.2]: https://github.com/TravisWheelerLab/sail/compare/libsail-v0.4.1...libsail-v0.4.2
 [0.4.1]: https://github.com/TravisWheelerLab/sail/compare/libsail-v0.4.0...libsail-v0.4.1
 [0.4.0]: https://github.com/TravisWheelerLab/sail/compare/libsail-v0.3.0...libsail-v0.4.0
 [0.3.0]: https://github.com/TravisWheelerLab/sail/compare/libsail-v0.2.0...libsail-v0.3.0
