@@ -1,0 +1,30 @@
+{
+  "id": "sail-99a1f9",
+  "title": "Check where sail reads every record twice to name an index",
+  "body": "`libsail` has two ways to give an index its names.\n\n- `Index::build_named(bytes, format)` reads the file once and keeps each record's offset and name as it goes.\n- `name_index()` runs on a collection that is already open: `IndexedFasta`, `IndexedStockholm` or `IndexedHmm`. It reads every record's bytes a second time through `Source::range`, one read per record, to find the names.\n\n`sail index` takes the second route. It calls `IndexedFasta::open`, which scans the file for offsets, then calls `name_index()`, which reads every record again (`commands/index.rs:46`, and the same in the Stockholm and HMM arms). `sail names` already takes the first route when the index file has no names (`commands/names.rs:97`).\n\n## Proposal\n\nGo through each place where `sail` builds or opens an index, and decide whether a single pass would do. A place qualifies only when it builds the index itself and then needs the names. Jack expects most places to stay as they are, and a few to change. A place that stays gets a note here saying why. A place that changes gets a commit on `dev`. Neither outcome touches `libsail`'s API or `sail`'s command line.\n\n| place | how it gets an index | whether it reads names |\n|---|---|---|\n| `commands/index.rs` | `IndexedX::open`, then `name_index()` | yes, written to the index file |\n| `commands/names.rs` | the index file, or `build_named` when that has no names | yes, printed |\n| `commands/count.rs` | `Index::build` | no |\n| `input::index_of` | the current index file, or `Index::build` | through the command that called it |\n| `commands/dedup.rs`, `commands/fetch.rs` | `index_of` on the indexed backend | yes, from each record with `seq::name_of` |\n| `commands/validate.rs` | `IndexedX::open` | not checked |\n\n## Out of scope\n\nWhether naming should report repeated names is sail-c04fbf.",
+  "type": "task",
+  "status": "open",
+  "priority": 3,
+  "labels": [
+    "sail"
+  ],
+  "parent": null,
+  "blocked_by": [],
+  "related": [],
+  "assignee": null,
+  "lease_expires": null,
+  "defer_until": null,
+  "created_at": "2026-10-14T20:04:10.14557972Z",
+  "updated_at": "2026-10-14T20:04:10.14557972Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
+  "notes": [],
+  "stamps": {
+    "created": {
+      "commit": "8d6dbd6",
+      "branch": "dev"
+    },
+    "closed": null
+  }
+}
