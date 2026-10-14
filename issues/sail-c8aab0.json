@@ -15,11 +15,20 @@
   "lease_expires": "2026-10-14T20:41:16.706631402Z",
   "defer_until": null,
   "created_at": "2026-10-14T20:13:52.794427359Z",
-  "updated_at": "2026-10-14T20:26:16.706631402Z",
+  "updated_at": "2026-10-14T20:28:56.004138233Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
-  "notes": [],
+  "notes": [
+    {
+      "id": "a69a33ba",
+      "at": "2026-10-14T20:28:56.004137223Z",
+      "author": "Jack Roddy/424f83e5",
+      "text": "Measured on a synthetic FASTA of 2,455,940 records named like `MGYP000001234567`, with a warm page cache, on one thread. The sort was most of the cost, and the file's order decided how much. `name_index` took 0.065 s when the names were already in order and 0.83 s when they were shuffled. The scan and copy took 0.06 s either way.\n\nThe sort was slow because each comparison reached a name through two dependent reads, first from `by_name` into `spans` and then into `blob`. Each entry of `spans` was a 24-byte `Option<Span>`. Sorting `(Span, position)` pairs reaches `blob` in one read, and took 0.23 s where the old sort took 0.70 s. `sort_unstable_by` with the position as the tie-break gives the same order the stable sort gave.\n\nDecided with Jack:\n\n- A is dropped. The scan and copy cost at most 0.066 s, so borrowing from the source saves little. The copy it would have removed is gone anyway: `name_index` and `build_named` now push borrowed names into a private `NameBuilder` and no longer go through `name_with`.\n- B is dropped. Jack does not want `rayon` in `libsail`.\n- C is dropped. The index file stores `by_name` and `position` needs it, so every naming sorts.\n- Memory matters as much as speed. `Span` is now one `NonZeroU64` holding the start and the length, so an `Option<Span>` takes 8 bytes where it took 24. The pairs cost 16 bytes per named record while the sort runs. The peak while naming stays where it was, and the finished index is smaller.\n\nBefore and after, on the same file:\n\n| run | before | after |\n|---|---|---|\n| `name_index` on a mapped file, shuffled names | 0.94 to 1.19 s | 0.26 s |\n| `name_index` on a mapped file, names in order | 0.07 s | 0.05 s |\n| `build_named`, shuffled names | 0.98 s, 274 MB peak | 0.31 s, 150 MB peak |\n| `build_named`, names in order | 0.17 s, 274 MB peak | 0.11 s, 150 MB peak |",
+      "commit": "8d6dbd6",
+      "branch": "dev"
+    }
+  ],
   "stamps": {
     "created": {
       "commit": "8d6dbd6",
