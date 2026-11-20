@@ -15,9 +15,9 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-11-20T00:25:57.694755472Z",
-  "updated_at": "2026-11-20T03:36:38.990036189Z",
+  "updated_at": "2026-11-20T03:36:38.999239465Z",
   "closed_at": "2026-11-20T03:19:55.611651092Z",
-  "close_reason": "libsail matches or beats needletail on wrapped DNA and protein, and trails owned needletail by about 0.035 s per GiB on one-line records. The changes to parse and Reader are in the working tree on dev, not yet committed. The two notes hold the numbers and the routes that were measured and declined.",
+  "close_reason": "libsail matches or beats needletail on wrapped DNA and protein, and trails owned needletail by about 0.035 s per GiB on one-line records. The changes to parse and Reader landed in 9a08f04 on dev. The two notes hold the numbers and the routes that were measured and declined.",
   "resolution": "done",
   "notes": [
     {
