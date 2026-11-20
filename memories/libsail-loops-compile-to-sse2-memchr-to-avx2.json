@@ -1,0 +1,10 @@
+{
+  "slug": "libsail-loops-compile-to-sse2-memchr-to-avx2",
+  "text": "libsail builds for baseline x86-64, so a loop the compiler vectorises gets 16-byte SSE2 only. memchr and memmem pick AVX2 at run time. A perf annotate of FastaParser::parse's old whitespace fold showed pcmpeqb and pminub on xmm registers; swapping it for memchr::memchr3 took 1 GiB of protein from 0.484 s to 0.433 s. len_of in seq/fasta.rs is still such a fold.",
+  "created_at": "2026-11-20T03:19:55.620829453Z",
+  "updated_at": "2026-11-20T03:19:55.620829453Z",
+  "stamp": {
+    "commit": "ff7969a",
+    "branch": "dev"
+  }
+}
