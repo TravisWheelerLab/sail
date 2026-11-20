@@ -9,6 +9,14 @@ cargo's reading of it below 1.0: the **minor** is the breaking axis, so 0.2 to
 
 ## [Unreleased]
 
+### Changed
+
+- `build_index`, and with it `Framed::open`, reads 1 MiB at a time. It used to
+  read 64 KiB. `lines::line_index` reads 1 MiB at a time too, and a new
+  `index::Reader` starts with a 1 MiB buffer. On a server with ext4 over an
+  enterprise NVMe drive, `Framed::open` on a cold 19.5 GB file took 6.5 s,
+  down from 12.8 s.
+
 ## [0.4.3] - 2026-11-19
 
 Reading FASTA through `index::Reader` and `FastaParser::parse` takes about half

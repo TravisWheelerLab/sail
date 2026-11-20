@@ -98,7 +98,11 @@ pub trait Delimit {
 // ---
 
 /// Fresh bytes read per round of [`scan`].
-const CHUNK: usize = 64 * 1024;
+//
+// a cold 19.5 GB file on ext4 over an enterprise NVMe
+// drive read at 1.5 GB/s in 64 KiB reads and 2.9 GB/s in
+// 1 MiB ones, which matched dd. 8 MiB was slower than 1 MiB
+const CHUNK: usize = 1 << 20;
 
 /// Fill `buf` as far as repeated reads will take it, returning 0 only at EOF.
 pub(crate) fn read_some<R: Read>(bytes: &mut R, buf: &mut [u8]) -> Result<usize> {

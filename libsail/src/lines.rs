@@ -28,7 +28,7 @@ use crate::index::Offset;
 //
 // matches index::CHUNK so the two framings issue the same
 // number of reads over the same file
-const CHUNK: usize = 64 * 1024;
+const CHUNK: usize = 1 << 20;
 
 // ---
 
