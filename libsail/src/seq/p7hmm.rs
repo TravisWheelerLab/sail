@@ -591,7 +591,7 @@ where
         }
 
         for field in &fields[1..1 + k] {
-            match_emissions.push(score(field, &format!("node {node}'s match emissions"))?);
+            match_emissions.push(score(field, format_args!("node {node}'s match emissions"))?);
         }
 
         // whichever of MAP, CONS, RF, MM and CS the header
@@ -740,7 +740,7 @@ fn split_first(line: &[u8]) -> Option<(&[u8], &[u8])> {
 }
 
 /// One score, where the file's `*` is [`f32::INFINITY`].
-fn score(token: &str, what: &str) -> Result<f32> {
+fn score(token: &str, what: impl Display) -> Result<f32> {
     if token == "*" {
         return Ok(f32::INFINITY);
     }
@@ -753,16 +753,13 @@ fn score(token: &str, what: &str) -> Result<f32> {
 
 /// Exactly `n` scores, so a row that is short or long is caught where it sits.
 fn scores(line: &str, n: usize, what: &str) -> Result<Vec<f32>> {
-    let fields: Vec<&str> = line.split_whitespace().collect();
+    let found = line.split_whitespace().count();
 
-    if fields.len() != n {
-        bail_parse!(
-            "{what}: expected {n} scores, found {}: {line:?}",
-            fields.len()
-        )
+    if found != n {
+        bail_parse!("{what}: expected {n} scores, found {found}: {line:?}")
     }
 
-    fields.iter().map(|f| score(f, what)).collect()
+    line.split_whitespace().map(|f| score(f, what)).collect()
 }
 
 fn number<T>(value: &str, what: &str) -> Result<T>
@@ -992,6 +989,22 @@ impl<S: Source> Indexable for IndexedHmm<S> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_bad_match_emission_names_its_node() {
+        let path = fixture!("models.hmm");
+        let bytes = std::fs::read(path).expect(path);
+        let offsets = build_index::<_, HmmDelimiter>(&bytes[..]).unwrap();
+        let first = &bytes[offsets[0].start as usize..][..offsets[0].n_bytes];
+
+        let node = b"\n      1   ";
+        let at = memchr::memmem::find(first, node).unwrap() + node.len();
+        let mut broken = first.to_vec();
+        broken[at] = b'x';
+
+        let err = HmmParser::parse(&broken).unwrap_err().to_string();
+        assert!(err.contains("node 1's match emissions"), "{err}");
+    }
 
     #[test]
     fn the_length_scan_agrees_with_the_parsed_record_on_every_fixture_record() {
