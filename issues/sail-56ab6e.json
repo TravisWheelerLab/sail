@@ -1,0 +1,30 @@
+{
+  "id": "sail-56ab6e",
+  "title": "How does a caller get a FASTA record's sequence into a buffer it owns?",
+  "body": "`FastaParser::parse(bytes) -> Result<FastaRecord>` in `seq/fasta.rs` is the one function that drops the line breaks from a FASTA record's residues. It writes them into a new `Vec` in `FastaRecord::seq`, reserved at the residues' length. A caller that gathers many records into one buffer copies every residue twice and allocates once per record.\n\nsufr does that. Its `read_sequence_file` joins every record of its input into one text, with a delimiter byte between records. On a 3.1 GB genome the extra copy is 3.1 GB, and peak memory grows by the largest record.\n\n## Options\n\n- An append. `fasta::append_seq(record: &[u8], out: &mut Vec<u8>)` adds the record's residues, without whitespace, to the end of `out`. It suits a caller that joins records, and it pairs with `name_of`, which already reads a name without parsing.\n- A parse into a reused record. `FastaParser::parse_into(record: &[u8], out: &mut FastaRecord)` clears `out` and refills `name`, `extra` and `seq`. It suits a caller that handles one record at a time. A caller that joins records still copies once out of `seq`.\n\nEither one is new API beside `parse` and changes nothing that exists.\n\nI lean to the append. The caller behind this issue is sufr, and `parse_into` would save sufr the allocation but not the copy.\n\n## Open\n\n- Which of the two, or both.\n- sufr is timing libsail's `index::Reader` against needletail, with `parse` as it is (sufr-409cc8). If sufr switches to libsail, it needs this soon.",
+  "type": "decision",
+  "status": "open",
+  "priority": 4,
+  "labels": [
+    "libsail"
+  ],
+  "parent": null,
+  "blocked_by": [],
+  "related": [],
+  "assignee": null,
+  "lease_expires": null,
+  "defer_until": null,
+  "created_at": "2026-11-20T00:09:40.727766127Z",
+  "updated_at": "2026-11-20T00:09:40.727766127Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
+  "notes": [],
+  "stamps": {
+    "created": {
+      "commit": "ff7969a",
+      "branch": "dev"
+    },
+    "closed": null
+  }
+}
