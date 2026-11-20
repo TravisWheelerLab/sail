@@ -3,7 +3,7 @@
   "title": "Every libsail read path is timed against a reference that does the same work",
   "body": "Under sail-ce02ff, reading FASTA through `index::Reader` and `FastaParser::parse` took 2 to 6 times as long as needletail. No benchmark covered that path. sufr found the gap when it tried `libsail` in place of needletail.\n\n`benchmarks/src/api.rs` times four of `libsail`'s choices, each against a reference that does the same work:\n\n- `build_index` against a `memchr` floor\n- sampling on disk against sampling in memory\n- reading records in file order against reading them scattered\n- `mmap` against `pread`\n\nNothing there times the streaming readers or any parser. These paths have no reference today:\n\n| path | reference, a first guess |\n|---|---|\n| `index::Reader` and `index::Readers` | a `memchr` floor, and needletail for FASTA |\n| `lines::Rows` and `lines::line_index` | a `memchr` floor on `\\n` |\n| `FastaParser::parse` | needletail, and a copy of each line found with `memchr` |\n| `StockholmParser::parse` and `HmmParser::parse` | Easel, where an `esl-` miniapp does the same work |\n| `HmmerRow`, `HmmerDomRow`, `BlastRow` and `NailRow` | a split on whitespace with `memchr` |\n| `IndexedFasta::record` and `try_get` | `pread` of the same byte range |\n\n## Proposal\n\nAdd a benchmark for each path to `benchmarks/src/api.rs`, with the reference first, as the file already does. A path slower than its reference by more than the run-to-run spread gets its own bug issue with the numbers.\n\n## Open\n\n- Which reference fits each path.\n- The inputs. The widest gap in sail-ce02ff came from long unwrapped records. Each format needs long records and short ones, and wrapped and unwrapped records where the format wraps.",
   "type": "task",
-  "status": "in_progress",
+  "status": "open",
   "priority": 2,
   "labels": [
     "libsail"
@@ -13,11 +13,11 @@
     "sail-ce02ff"
   ],
   "related": [],
-  "assignee": "Jack Roddy/0eeac819",
-  "lease_expires": "2026-11-20T03:47:49.856280554Z",
+  "assignee": null,
+  "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-11-20T00:31:29.402151214Z",
-  "updated_at": "2026-11-20T03:36:29.910440548Z",
+  "updated_at": "2026-11-20T03:42:46.842100891Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
