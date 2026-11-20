@@ -17,7 +17,7 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-11-20T00:31:29.402151214Z",
-  "updated_at": "2026-11-20T03:42:46.842100891Z",
+  "updated_at": "2026-11-20T23:25:54.973787977Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
@@ -36,6 +36,14 @@
       "author": "Jack Roddy/0eeac819",
       "text": "Survey of every other parser, with fixes for the ones that touched every byte one at a time or allocated per field. Measured with the harness in `tmp-claude/2026-11-19-fasta-gap/repro` against a binary built at 9a08f04. Medians of 5 interleaved warm runs on an AMD Ryzen 7 9800X3D. Uncommitted in the working tree.\n\n| path | input | before | after |\n|---|---|---|---|\n| `fasta::rewrap` | 1 GiB DNA, wrapped at 60 | 0.343 s | 0.277 s |\n| `fasta::rewrap` | 1 GiB DNA, one line per record | 0.361 s | 0.174 s |\n| `fasta::rewrap` | 1.1 GiB protein, 2.8M records | 0.478 s | 0.392 s |\n| `StockholmParser::parse` | 20,000 alignments of 40 rows, 295 MB | 0.328 s | 0.250 s |\n| `StockholmParser::parse` | 15 alignments of 4,000 rows in blocks of 60, 240 MB | 0.256 s | 0.211 s |\n| `HmmParser::parse` | `models.hmm` 3,000 times, 184 MB | 0.680 s | 0.528 s |\n\n## What changed\n\n- `rewrap` and `FastaParser::parse` share a private `residue_runs` in `seq/fasta.rs`. It is the block check from sail-ce02ff, yielding runs instead of copying. `parse` did not change speed.\n- `stockholm.rs` gained a private `lines` that splits on `\\n` with `memchr_iter`, in place of `slice::split` with a closure. `parse` and `name_of` use it. A test pins it against `slice::split`.\n- `HmmParser::parse` passed `&format!(\"node {node}'s match emissions\")` to `score` for every emission, 20 allocations per node on amino profiles. `score` now takes `impl Display` and the caller passes `format_args!`, which formats only on error. `scores` counts fields with `split_whitespace().count()` in place of collecting a `Vec<&str>` per line. A test pins the error text.\n\n## Tried and removed\n\n- Replacing `aligned`'s `iter().any(is_ascii_whitespace)` in `stockholm.rs` with a fold that vectorises. Against the line split alone it changed 0.221 s to 0.212 s on the blocked file and nothing on the other, within noise.\n\n## Left alone\n\n- `fasta::len_of` is an SSE2 fold. It costs about 40 ms per GiB over framing on DNA and 28 ms on protein. AVX2 would need runtime dispatch and `unsafe`.\n- The hit table rows (`HmmerRow`, `HmmerDomRow`, `BlastRow`, `NailRow`) split columns separated by runs of whitespace, parse numbers, and allocate 2 to 6 `String`s per row. `memchr` has no obvious fit, and nothing here measured them.\n- `lines::Rows` and `line_index` already frame with `memchr`.",
       "commit": "9a08f04",
+      "branch": "dev"
+    },
+    {
+      "id": "36e6fc2b",
+      "at": "2026-11-20T23:25:54.973787367Z",
+      "author": "Jack Roddy/0eeac819",
+      "text": "One more path to time: the `sail` CLI's output buffer. `sail/src/output.rs` wraps stdout and output files in `BufWriter::new`, which holds 8 KiB. Rewrapping 1 GiB of FASTA through it makes about 130,000 `write` calls. Time `sail` writing a large FASTA to a file and to a pipe with the default against `BufWriter::with_capacity` at 64 KiB and 1 MiB. Nobody has measured whether the size matters.",
+      "commit": "86dc9c1",
       "branch": "dev"
     }
   ],
