@@ -9,6 +9,12 @@ cargo's reading of it below 1.0: the **minor** is the breaking axis, so 0.2 to
 
 ## [Unreleased]
 
+## [0.4.3] - 2026-11-19
+
+Reading FASTA through `index::Reader` and `FastaParser::parse` takes about half
+as long as it did. `rewrap`, `StockholmParser::parse` and `HmmParser::parse` are
+faster too. The API is unchanged.
+
 ### Changed
 
 - `FastaParser::parse` copies a record's residues a line at a time. It used to
@@ -230,7 +236,8 @@ read one record at a time.
 First release: FASTA, Stockholm, HMMER3 p7hmm and the BLAST, HMMER and nail hit
 tables, with the `collection`, `parse` and `source` layers behind them.
 
-[Unreleased]: https://github.com/TravisWheelerLab/sail/compare/libsail-v0.4.2...HEAD
+[Unreleased]: https://github.com/TravisWheelerLab/sail/compare/libsail-v0.4.3...HEAD
+[0.4.3]: https://github.com/TravisWheelerLab/sail/compare/libsail-v0.4.2...libsail-v0.4.3
 [0.4.2]: https://github.com/TravisWheelerLab/sail/compare/libsail-v0.4.1...libsail-v0.4.2
 [0.4.1]: https://github.com/TravisWheelerLab/sail/compare/libsail-v0.4.0...libsail-v0.4.1
 [0.4.0]: https://github.com/TravisWheelerLab/sail/compare/libsail-v0.3.0...libsail-v0.4.0
