@@ -15,11 +15,20 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-11-20T22:56:48.221994834Z",
-  "updated_at": "2026-11-20T22:56:55.88796333Z",
+  "updated_at": "2026-11-20T23:10:28.686923798Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
-  "notes": [],
+  "notes": [
+    {
+      "id": "69816e2a",
+      "at": "2026-11-20T23:10:28.686923018Z",
+      "author": "Jack Roddy/0eeac819",
+      "text": "Probe results from the server, run by the sufr session with `tmp-claude/2026-11-20-cold-framing-probe` built against libsail 0.4.3. The volume is ext4 mounted `rw,relatime` on an LVM volume over a Dell enterprise NVMe drive, with `read_ahead_kb` 128 on both the LVM device and the drive. The file is 19.46 GB with 515,605 records. Each run is cold, after `posix_fadvise(DONTNEED)`. Times are medians of 3, in seconds.\n\n| variant | time | GB/s |\n|---|---|---|\n| `Framed::open` | 12.70 | 1.53 |\n| `read(2)` 64 KiB plus memmem | 13.20 | 1.47 |\n| `read(2)` 64 KiB after `POSIX_FADV_SEQUENTIAL` | 9.59 | 2.03 |\n| `read(2)` 1 MiB | 6.61 | 2.94 |\n| `read(2)` 8 MiB | 7.38 | 2.64 |\n| `read(2)` 8 MiB after `POSIX_FADV_SEQUENTIAL` | 7.38 | 2.64 |\n| `index::Reader`, whole file | 7.25 | 2.68 |\n| 1 range, one `Reader` | 7.24 | 2.69 |\n| 2 ranges | 6.01 | 3.24 |\n| 4 ranges | 5.76 | 3.38 |\n| `dd bs=8M`, one run | 6.48 | 3.00 |\n\nThe read size is the cause. At 64 KiB per read the drive delivers half of what it delivers at 1 MiB, and 1 MiB matches one `dd` stream. The sequential hint recovers part of the gap. `build_index`, under `Framed::open`, reads exactly `index::CHUNK`, which is 64 KiB. `Reader` reads until its buffer is full, and its buffer grows to the longest record, so it already issues larger reads. That is an inference from `Reader::fill`, which explains why it ran at 7.25 s where `Framed::open` took 12.70 s.\n\nOn the Ryzen 7 9800X3D with a Samsung 990 PRO, 64 KiB and 1 MiB reads took the same time cold, and 1 MiB was no slower warm.\n\n## Proposal\n\nRaise `index::CHUNK` from 64 KiB to 1 MiB, and `lines::CHUNK` with it, since `lines.rs` keeps the two equal on purpose. That sets the read size for `build_index`, for `line_index`, and for a new `Reader`'s first buffer. Expected on this server: `Framed::open` cold from 12.7 s to about 6.6 s. 8 MiB was slower than 1 MiB, so 1 MiB is the size to try first.",
+      "commit": "fec73b2",
+      "branch": "dev"
+    }
+  ],
   "stamps": {
     "created": {
       "commit": "fec73b2",
