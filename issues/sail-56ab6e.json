@@ -15,11 +15,20 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-11-20T00:09:40.727766127Z",
-  "updated_at": "2026-11-20T00:09:40.727766127Z",
+  "updated_at": "2026-11-20T00:23:30.899321834Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
-  "notes": [],
+  "notes": [
+    {
+      "id": "7b3ed9b1",
+      "at": "2026-11-20T00:23:30.899321154Z",
+      "author": "Jack Roddy/0eeac819",
+      "text": "Dropped in favour of sufr doing the copy itself, the way nail reads its inputs. nail frames and names records with `libsail` and parses each record's bytes with its own `Sequence::from_fasta`. sufr can do the same with `index::Reader` and `fasta::name_of`, then drop whitespace as it copies residues into its text.\n\nThree reasons:\n\n- sufr is the only caller.\n- sufr may want to apply its `normalize` byte table in the same loop as the copy. `append_seq` could not do that without a parameter that only sufr would use.\n- No timing shows that the extra copy matters. sufr-409cc8 is still open on whether reading is the slow part of a build.\n\nThe sufr side is sufr-1266f6.",
+      "commit": "ff7969a",
+      "branch": "dev"
+    }
+  ],
   "stamps": {
     "created": {
       "commit": "ff7969a",
