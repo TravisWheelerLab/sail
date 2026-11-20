@@ -1,0 +1,32 @@
+{
+  "id": "sail-7656e8",
+  "title": "Does libsail split a file into record-aligned ranges for parallel framing?",
+  "body": "`build_index`, which `Framed::open` calls, frames a whole file on one thread. `index::Reader` frames one stream on one thread. libsail starts no threads of its own. A caller that wants to frame one file on several threads has no way to start a `Reader` at a record boundary partway through it.\n\n## Measurements\n\nThese time framing only: each record's bytes are counted and nothing is parsed. For N ranges, the caller first finds the first `\\n>` past each of N even cuts, one after another. Then it frames each range on its own thread with its own `Reader` over `File::take`. The machine is an AMD Ryzen 7 9800X3D with a Samsung 990 PRO, using at most 4 cores. Times are medians in seconds, of 5 warm runs and 3 cold. Cold means `posix_fadvise(DONTNEED)` before each run. \"zstd\" is the file on btrfs with `compress=zstd:3`, and \"raw\" is a copy with compression turned off.\n\n1.1 GiB of protein in 2.8 M records:\n\n| ranges | warm | cold, raw | cold, zstd |\n|---|---|---|---|\n| 1 | 0.091 | 0.167 | 0.247 |\n| 2 | 0.047 | 0.151 | 0.151 |\n| 4 | 0.026 | 0.151 | 0.115 |\n| `build_index` | 0.090 | 0.169 | 0.245 |\n\n1 GiB of DNA in 24 records, wrapped at 60:\n\n| ranges | warm | cold, raw | cold, zstd |\n|---|---|---|---|\n| 1 | 0.060 | 0.177 | 0.245 |\n| 2 | 0.073 | 0.165 | 0.212 |\n| 4 | 0.104 | 0.199 | 0.214 |\n| `build_index` | 0.047 | 0.148 | 0.243 |\n\n- With a warm cache and many records, 4 ranges framed 3.5 times as fast as one.\n- From a cold uncompressed file, one range already read at about 7.4 GB/s, the drive's rated speed. 4 ranges gained 10% on protein and lost on DNA.\n- From a compressed file, the kernel decompresses during the read, and 4 ranges framed protein 2.1 times as fast.\n- With 24 records of 44 MB, more ranges were slower warm. A cut lands inside a record, so the search for the next boundary reads up to a whole record before any thread starts. Each thread's `Reader` also grows its own buffer to a whole record. Both causes come from reading the code, not from a profile.\n\nsail-1fb054 records a server where cold framing runs at half the speed of one `dd` stream. Several streams might help cold reads there, where they do not here. That issue's probe answers it.\n\n## Options\n\n- Add `split`. libsail finds the record boundaries, and the caller runs the threads. Each range is an ordinary stream for `Reader::new`. The boundary search is the anchored pattern `Reader` already uses. It costs one short read per cut, plus up to one record where a cut lands inside a long record. A `Reader` per range counts records from 0, so a caller that needs global positions adds up the counts of earlier ranges. Cost: one public function and its tests.\n\n```rust\n/// Byte ranges of `path` that each begin on a record boundary, in file\n/// order, together covering the whole file.\npub fn split(\n    path: impl AsRef<Path>,\n    format: Format,\n    parts: usize,\n) -> Result<Vec<Range<u64>>>;\n```\n\n- Add nothing. Callers that want parallel framing find boundaries themselves, as the harness does. Cost: every caller repeats the anchored search. Stockholm and p7hmm end a record with their delimiter, so a caller can easily cut one line off.\n- A parallel `build_index` inside libsail, on `rayon` behind a feature. nail and sufr both use `rayon`, so it would share their pool. Cost: a dependency and a feature flag, for a gain that shows only warm or compressed.\n\nI lean to `split` alone, after sail-1fb054's probe. It helps warm and compressed reads of files with many records, which is the shape of MGnify and ATB, and it starts no threads. A parallel `build_index` can be built on it later if a caller needs one.\n\n## Open\n\n- Whether `split` takes a path, a `File`, or a `Source`.\n- What `split` returns when `parts` exceeds the number of records.\n- Whether sail-1fb054's server gains from several ranges cold.",
+  "type": "decision",
+  "status": "open",
+  "priority": 2,
+  "labels": [
+    "libsail"
+  ],
+  "parent": null,
+  "blocked_by": [
+    "sail-1fb054"
+  ],
+  "related": [],
+  "assignee": null,
+  "lease_expires": null,
+  "defer_until": null,
+  "created_at": "2026-11-20T22:57:23.654913047Z",
+  "updated_at": "2026-11-20T22:57:23.654913047Z",
+  "closed_at": null,
+  "close_reason": null,
+  "resolution": null,
+  "notes": [],
+  "stamps": {
+    "created": {
+      "commit": "fec73b2",
+      "branch": "dev"
+    },
+    "closed": null
+  }
+}
