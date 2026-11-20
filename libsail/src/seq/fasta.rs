@@ -143,7 +143,10 @@ impl Parse for FastaParser {
             // endings, which is 1.7% at a 60 column wrap
             seq: {
                 let mut seq = Vec::with_capacity(residues.len());
-                append_residues(residues, &mut seq);
+                residue_runs(residues, |run| {
+                    seq.extend_from_slice(run);
+                    Ok(())
+                })?;
 
                 seq
             },
@@ -151,28 +154,33 @@ impl Parse for FastaParser {
     }
 }
 
-/// Append `bytes` to `seq` with every ASCII whitespace byte dropped.
-fn append_residues(bytes: &[u8], seq: &mut Vec<u8>) {
+/// Call `f` on each run of `bytes` between ASCII whitespace, in order. A run
+/// may be empty.
+fn residue_runs(bytes: &[u8], mut f: impl FnMut(&[u8]) -> Result<()>) -> Result<()> {
     // small enough that a block is still in L1 when the
-    // copy reads it again after the check
+    // runs are read again after the check
     const BLOCK: usize = 4096;
 
     for block in bytes.chunks(BLOCK) {
         // ASCII whitespace is \t \n \x0c \r and space. a block
-        // with none of the other three copies the runs
-        // between \n and \r, and any other block takes the
-        // filter, which writes one byte at a time
+        // with none of the other three splits at \n and \r,
+        // found with memchr2, and any other block takes a
+        // split that tests one byte at a time
         if memchr::memchr3(b' ', b'\t', b'\x0c', block).is_none() {
             let mut start = 0;
             for end in memchr::memchr2_iter(b'\n', b'\r', block) {
-                seq.extend_from_slice(&block[start..end]);
+                f(&block[start..end])?;
                 start = end + 1;
             }
-            seq.extend_from_slice(&block[start..]);
+            f(&block[start..])?;
         } else {
-            seq.extend(block.iter().copied().filter(|b| !b.is_ascii_whitespace()));
+            for run in block.split(|b| b.is_ascii_whitespace()) {
+                f(run)?;
+            }
         }
     }
+
+    Ok(())
 }
 
 /// The name in the bytes of one framed record, read without parsing it.
@@ -254,9 +262,7 @@ pub fn rewrap(record: &[u8], w: &mut dyn Write, width: usize) -> Result<()> {
     // wrapped at `width` costs one write_all per line. col
     // carries across runs, which is what re-wraps an input
     // wrapped at some other width, or not wrapped at all
-    for run in residues.split(|b| b.is_ascii_whitespace()) {
-        let mut run = run;
-
+    residue_runs(residues, |mut run| {
         while !run.is_empty() {
             let take = (width - col).min(run.len());
             w.write_all(&run[..take])?;
@@ -268,7 +274,9 @@ pub fn rewrap(record: &[u8], w: &mut dyn Write, width: usize) -> Result<()> {
                 col = 0;
             }
         }
-    }
+
+        Ok(())
+    })?;
 
     if col > 0 {
         w.write_all(b"\n")?;
@@ -718,7 +726,7 @@ mod tests {
     }
 
     #[test]
-    fn appending_residues_drops_exactly_the_bytes_the_whitespace_filter_drops() {
+    fn the_residue_runs_hold_exactly_the_bytes_the_whitespace_filter_keeps() {
         // a line longer than a block, with whitespace either
         // side of the block boundary and at the very end
         let mut long = vec![b'A'; 10_000];
@@ -752,7 +760,11 @@ mod tests {
 
         for bytes in cases {
             let mut seq = Vec::new();
-            append_residues(&bytes, &mut seq);
+            residue_runs(&bytes, |run| {
+                seq.extend_from_slice(run);
+                Ok(())
+            })
+            .unwrap();
 
             let filtered: Vec<u8> = bytes
                 .iter()

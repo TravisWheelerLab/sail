@@ -21,6 +21,10 @@ cargo's reading of it below 1.0: the **minor** is the breaking axis, so 0.2 to
 - A FASTA `index::Reader` holds one record in its buffer, not two, and no longer
   moves the previous record before each read. After an `advance` that fails,
   `record()` returns an empty record. It used to return the previous record.
+- `seq::fasta::rewrap` finds the line breaks in a record with `memchr`. It used
+  to test every byte for whitespace. Rewrapping 1 GiB of DNA at 60 columns
+  takes 0.28 s, down from 0.34 s. With each record on one line it takes 0.17 s,
+  down from 0.36 s.
 
 ## [0.4.2] - 2026-10-14
 
