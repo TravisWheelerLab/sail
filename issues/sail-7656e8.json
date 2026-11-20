@@ -17,11 +17,20 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-11-20T22:57:23.654913047Z",
-  "updated_at": "2026-11-20T22:57:23.654913047Z",
+  "updated_at": "2026-11-20T23:10:28.696718859Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
-  "notes": [],
+  "notes": [
+    {
+      "id": "1304f892",
+      "at": "2026-11-20T23:10:28.696718169Z",
+      "author": "Jack Roddy/0eeac819",
+      "text": "The probe in sail-1fb054 ran on the server, cold, on 19.46 GB with 515,605 records. One range took 7.24 s, 2 ranges 6.01 s and 4 ranges 5.76 s. A single 1 MiB read loop took 6.61 s, so 4 ranges gain about 13% over one thread once the read size is fixed. The sufr session measured `dd` streams on a 90 GB file there and topped out at 3.4 to 3.6 GB/s however many it ran, which is about the 4-range speed. Cold, parallel framing gains little on that server too. Warm, the 3.5x on the Ryzen above still stands.",
+      "commit": "fec73b2",
+      "branch": "dev"
+    }
+  ],
   "stamps": {
     "created": {
       "commit": "fec73b2",
