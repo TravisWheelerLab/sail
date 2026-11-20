@@ -3,7 +3,7 @@
   "title": "Cold framing on an ext4 NVMe server reads at half the speed of dd",
   "body": "sufr's measurements of `Framed::open` on a server with Dell enterprise NVMe under ext4 on LVM, reported from its session and read with libsail 0.4.3:\n\n| input | warm | cold |\n|---|---|---|\n| 90.1 GB, 2.57 M records | 14.4 s, 6.2 GB/s | 60-61 s, 1.5 GB/s |\n| 21.5 GB, 100 M records | 5.7 s | 16.2 s |\n| 19.5 GB, 516 K records | 2.6 s | 13.0 s |\n| hg38 without N, 3.1 GB, 455 records | 0.55 s | 2.13 s |\n\nCold means `posix_fadvise(DONTNEED)` on the file before each run. Plain `dd bs=8M` of the 90 GB file, cold, one run each, read at 2.96 GB/s with one stream and 3.4 to 3.6 GB/s with 4 to 32 streams. Framing warm runs at 6.2 GB/s. That suggests the scan is not what holds the cold read to 1.5 GB/s, though nobody has profiled it. `Framed::map` took the same cold time as `Framed::open`. `read_ahead_kb` is 128 on every block device there.\n\n`Framed::open` builds its index with `build_index`, which reads 64 KiB at a time (`index::CHUNK`).\n\nOn an AMD Ryzen 7 9800X3D with a Samsung 990 PRO, the gap does not reproduce. A cold uncompressed 1 GiB file framed at about 7.4 GB/s, the drive's rated speed, and a plain read with `memchr::memmem` took the same time at 64 KiB, 1 MiB and 8 MiB per read. The harness is `tmp-claude/2026-11-19-fasta-gap/repro/src/floors.rs` in the sail checkout, variants `framed`, `rs64k`, `rs1m` and `rs8m`.\n\n## Proposal\n\nRun those four variants cold on the server before changing anything, together with a variant that calls `posix_fadvise(POSIX_FADV_SEQUENTIAL)` before reading. If larger reads or the hint close the gap to one `dd` stream, the same change goes into `build_index` and `Reader::fill`.\n\n## Open\n\n- Whether the cause is the read size, the readahead window, or something about LVM on that server.",
   "type": "task",
-  "status": "in_progress",
+  "status": "closed",
   "priority": 2,
   "labels": [
     "libsail"
@@ -12,13 +12,13 @@
   "blocked_by": [],
   "related": [],
   "assignee": "Jack Roddy/0eeac819",
-  "lease_expires": "2026-11-20T23:34:30.402934506Z",
+  "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-11-20T22:56:48.221994834Z",
-  "updated_at": "2026-11-20T23:25:01.921831317Z",
-  "closed_at": null,
-  "close_reason": null,
-  "resolution": null,
+  "updated_at": "2026-11-20T23:25:54.964260494Z",
+  "closed_at": "2026-11-20T23:25:54.964260494Z",
+  "close_reason": "index::CHUNK and lines::CHUNK are 1 MiB in 86dc9c1. On the server, Framed::open on a cold 19.5 GB file took 6.5 s where it took 12.8 s, matching one dd stream. The notes hold both probes.",
+  "resolution": "done",
   "notes": [
     {
       "id": "69816e2a",
@@ -42,6 +42,9 @@
       "commit": "fec73b2",
       "branch": "dev"
     },
-    "closed": null
+    "closed": {
+      "commit": "86dc9c1",
+      "branch": "dev"
+    }
   }
 }
