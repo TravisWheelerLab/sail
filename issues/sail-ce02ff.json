@@ -3,7 +3,7 @@
   "title": "Reading FASTA through Reader and FastaParser takes 2 to 6 times as long as needletail",
   "body": "Reading a FASTA file through `index::Reader` and `FastaParser::parse` takes 2 to 6 times as long as needletail's `parse_fastx_file` on the same file. The workload appends each record's sequence, without line breaks, to one buffer and keeps each record's name. sufr reads its input this way (sufr-409cc8), and it found the gap when it tried libsail in place of needletail.\n\nMedians of 5 warm runs on a Ryzen 7 9800X3D, with libsail 0.4.2, needletail 0.7.4 and rustc 1.98.1. Both readers returned the same total length and record count on every file.\n\n| input | needletail | libsail | ratio |\n|---|---|---|---|\n| DNA, 1 GiB, 24 records, wrapped at 60 | 0.403 s | 1.068 s | 2.7 |\n| the same DNA, one line per record | 0.138 s | 0.833 s | 6.0 |\n| protein, 1.1 GiB, 2.8 M records of 50 to 700, wrapped at 60 | 0.491 s | 1.032 s | 2.1 |\n\nThe gap is widest on the unwrapped file, where there are no line breaks to drop. sufr's own reader, which also reserves the buffer at the file's size, showed the same pattern: 0.37 s against 0.82 s wrapped, 0.15 s against 0.65 s unwrapped, and 0.49 s against 0.84 s on protein.\n\n## Reproducing it\n\nThe inputs come from a generator that writes random sequence with `os.urandom`. It takes about 15 s and writes 3.3 GB.\n\n```python\nimport os, random\n\nDNA = bytes(b\"ACGT\"[i % 4] for i in range(256))\nAA = bytes(b\"ACDEFGHIKLMNPQRSTVWY\"[i % 20] for i in range(256))\n\n\ndef write(path, records, table, width):\n    with open(path, \"wb\") as out:\n        for name, length in records:\n            out.write(b\">\" + name + b\"\\n\")\n            seq = os.urandom(length).translate(table)\n            if width:\n                for i in range(0, length, width):\n                    out.write(seq[i : i + width] + b\"\\n\")\n            else:\n                out.write(seq + b\"\\n\")\n\n\nrandom.seed(1)\ndna = [(b\"chr%d\" % i, (1 << 30) // 24) for i in range(24)]\nwrite(\"dna-wrapped.fa\", dna, DNA, 60)\nwrite(\"dna-unwrapped.fa\", dna, DNA, 0)\ntotal, protein = 0, []\nwhile total < (1 << 30):\n    length = random.randint(50, 700)\n    protein.append((b\"prot%d\" % len(protein), length))\n    total += length\nwrite(\"protein.fa\", protein, AA, 60)\n```\n\nThe harness is a standalone package with this `Cargo.toml`:\n\n```toml\n[workspace]\n\n[package]\nname = \"repro\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n[dependencies]\nlibsail = \"0.4.2\"\nneedletail = \"0.7.3\"\n```\n\nand this `src/main.rs`:\n\n```rust\nuse libsail::{format::Format, index::Reader, parse::Parse, seq::fasta::FastaParser};\nuse std::{env, fs::File, time::Instant};\n\n// every record's sequence, without line breaks, appended to one buffer,\n// and every record's name\nfn needletail(path: &str) -> (Vec<u8>, Vec<Vec<u8>>) {\n    let mut reader = needletail::parse_fastx_file(path).unwrap();\n    let (mut text, mut names) = (Vec::new(), Vec::new());\n    while let Some(rec) = reader.next() {\n        let rec = rec.unwrap();\n        text.extend_from_slice(&rec.seq());\n        names.push(rec.id().to_vec());\n    }\n    (text, names)\n}\n\nfn libsail(path: &str) -> (Vec<u8>, Vec<Vec<u8>>) {\n    let mut reader = Reader::new(File::open(path).unwrap(), Format::Fasta);\n    let (mut text, mut names) = (Vec::new(), Vec::new());\n    while reader.advance().unwrap() {\n        let rec = FastaParser::parse(reader.record()).unwrap();\n        text.extend_from_slice(&rec.seq);\n        names.push(rec.name);\n    }\n    (text, names)\n}\n\nfn main() {\n    let args: Vec<String> = env::args().collect();\n    let now = Instant::now();\n    let (text, names) = match args[1].as_str() {\n        \"needletail\" => needletail(&args[2]),\n        \"libsail\" => libsail(&args[2]),\n        _ => panic!(\"needletail or libsail\"),\n    };\n    let secs = now.elapsed().as_secs_f64();\n    println!(\"{}\\t{secs:.3}\\t{}\\t{}\", args[1], text.len(), names.len());\n}\n```\n\nBuild it with `cargo build --release`, then time five warm runs of each reader on each file. The output columns are the reader, the seconds, the total sequence length and the record count.\n\n```bash\nfor rep in 1 2 3 4 5; do\n  for f in dna-wrapped.fa dna-unwrapped.fa protein.fa; do\n    cat \"$f\" > /dev/null\n    for r in needletail libsail; do\n      printf '%s\\t' \"$f\"; ./target/release/repro \"$r\" \"$f\"\n    done\n  done\ndone\n```\n\n## Open\n\n- Where the time goes. Nobody has split it between `Reader::advance` framing the record and `parse` building the `FastaRecord`.\n- `parse` filters the residues one byte at a time with `is_ascii_whitespace`, even on a line with no break to drop. That is one place to look, not a measured cause.\n- needletail returns a record's sequence borrowed when it sits on one line, and copies only for a wrapped record. `parse` always copies. sail-56ab6e proposes a way for a caller to skip that copy.",
   "type": "bug",
-  "status": "in_progress",
+  "status": "closed",
   "priority": 2,
   "labels": [
     "libsail"
@@ -12,13 +12,13 @@
   "blocked_by": [],
   "related": [],
   "assignee": "Jack Roddy/0eeac819",
-  "lease_expires": "2026-11-20T00:45:36.899211562Z",
+  "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-11-20T00:25:57.694755472Z",
-  "updated_at": "2026-11-20T03:19:55.601455238Z",
-  "closed_at": null,
-  "close_reason": null,
-  "resolution": null,
+  "updated_at": "2026-11-20T03:19:55.611651092Z",
+  "closed_at": "2026-11-20T03:19:55.611651092Z",
+  "close_reason": "libsail matches or beats needletail on wrapped DNA and protein, and trails owned needletail by about 0.035 s per GiB on one-line records. The changes to parse and Reader are in the working tree on dev, not yet committed. The two notes hold the numbers and the routes that were measured and declined.",
+  "resolution": "done",
   "notes": [
     {
       "id": "2250f2e5",
@@ -42,6 +42,9 @@
       "commit": "ff7969a",
       "branch": "dev"
     },
-    "closed": null
+    "closed": {
+      "commit": "ff7969a",
+      "branch": "dev"
+    }
   }
 }
