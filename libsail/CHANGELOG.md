@@ -9,6 +9,19 @@ cargo's reading of it below 1.0: the **minor** is the breaking axis, so 0.2 to
 
 ## [Unreleased]
 
+### Changed
+
+- `FastaParser::parse` copies a record's residues a line at a time. It used to
+  test every byte for whitespace. Reading a 1 GiB FASTA file through
+  `index::Reader` and `parse` now takes 0.37 s at 60 residues a line, down from
+  0.83 s. With each record on one line it takes 0.26 s, down from 0.59 s.
+- `index::Reader` builds its delimiter search once. It used to build one for
+  every record. Framing 2.8 million protein records takes 0.18 s, down from
+  0.22 s.
+- A FASTA `index::Reader` holds one record in its buffer, not two, and no longer
+  moves the previous record before each read. After an `advance` that fails,
+  `record()` returns an empty record. It used to return the previous record.
+
 ## [0.4.2] - 2026-10-14
 
 `Framed::name_index`, `Index::build_named` and `Index::name_with` sort names

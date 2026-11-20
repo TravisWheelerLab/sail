@@ -139,23 +139,39 @@ impl Parse for FastaParser {
             name: header[..split].to_vec(),
             extra: header[split..].trim_ascii().to_vec(),
 
-            // reserved rather than collected: Filter's
-            // size_hint floor is 0, so collect() doubles from
-            // 8 and memcpy's the residues at every step.
             // residues.len() overshoots only by the line
             // endings, which is 1.7% at a 60 column wrap
             seq: {
                 let mut seq = Vec::with_capacity(residues.len());
-                seq.extend(
-                    residues
-                        .iter()
-                        .copied()
-                        .filter(|b| !b.is_ascii_whitespace()),
-                );
+                append_residues(residues, &mut seq);
 
                 seq
             },
         })
+    }
+}
+
+/// Append `bytes` to `seq` with every ASCII whitespace byte dropped.
+fn append_residues(bytes: &[u8], seq: &mut Vec<u8>) {
+    // small enough that a block is still in L1 when the
+    // copy reads it again after the check
+    const BLOCK: usize = 4096;
+
+    for block in bytes.chunks(BLOCK) {
+        // ASCII whitespace is \t \n \x0c \r and space. a block
+        // with none of the other three copies the runs
+        // between \n and \r, and any other block takes the
+        // filter, which writes one byte at a time
+        if memchr::memchr3(b' ', b'\t', b'\x0c', block).is_none() {
+            let mut start = 0;
+            for end in memchr::memchr2_iter(b'\n', b'\r', block) {
+                seq.extend_from_slice(&block[start..end]);
+                start = end + 1;
+            }
+            seq.extend_from_slice(&block[start..]);
+        } else {
+            seq.extend(block.iter().copied().filter(|b| !b.is_ascii_whitespace()));
+        }
     }
 }
 
@@ -699,6 +715,52 @@ mod tests {
         let wrapped = FastaParser::parse(b">a\nAC\nGT\nAC\nGT\n").unwrap();
         assert_eq!(one_line.seq, b"ACGTACGT");
         assert_eq!(one_line, wrapped, "wrapping is not part of the record");
+    }
+
+    #[test]
+    fn appending_residues_drops_exactly_the_bytes_the_whitespace_filter_drops() {
+        // a line longer than a block, with whitespace either
+        // side of the block boundary and at the very end
+        let mut long = vec![b'A'; 10_000];
+        long[4095] = b' ';
+        long[4096] = b'\t';
+        long[9_999] = b'\x0c';
+
+        // \r ends one block and \n starts the next
+        let mut split_crlf = vec![b'A'; 5000];
+        split_crlf[4095] = b'\r';
+        split_crlf[4096] = b'\n';
+
+        // one line, a clean block and then a block with a space
+        let mut clean_then_dirty = vec![b'A'; 6000];
+        clean_then_dirty[5000] = b' ';
+
+        // \x0b is below b' ' but is not ASCII whitespace, so
+        // it sends its block to the filter and is kept
+        let cases: Vec<Vec<u8>> = vec![
+            b"".to_vec(),
+            b"\n".to_vec(),
+            b"\nACGT\nAC\n".to_vec(),
+            b"\r\nACGT\r\nAC\r\n".to_vec(),
+            b"\nAC GT\tAC\x0cGT\n".to_vec(),
+            b"\nAC\rGT\n\n\nAC".to_vec(),
+            b"\nAC\x0bGT\x00AC\r".to_vec(),
+            [b"\n".as_slice(), &long, b"\n", &long].concat(),
+            split_crlf,
+            clean_then_dirty,
+        ];
+
+        for bytes in cases {
+            let mut seq = Vec::new();
+            append_residues(&bytes, &mut seq);
+
+            let filtered: Vec<u8> = bytes
+                .iter()
+                .copied()
+                .filter(|b| !b.is_ascii_whitespace())
+                .collect();
+            assert_eq!(seq, filtered, "{:?}", String::from_utf8_lossy(&bytes));
+        }
     }
 
     #[test]

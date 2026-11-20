@@ -1950,8 +1950,9 @@ pub struct Reader<R: Read> {
     delim: &'static [u8],
     kind: Delimiter,
 
-    /// `'\n' + DELIM`, the anchored pattern [`scan`] also searches for.
-    needle: Vec<u8>,
+    /// A search for `'\n' + DELIM`, the anchored pattern [`scan`] also
+    /// searches for.
+    finder: memmem::Finder<'static>,
 
     /// A newline that is not in the file, then the file's bytes: `buf[i]` is at
     /// file offset `base + i - 1`.
@@ -1987,14 +1988,18 @@ pub struct Reader<R: Read> {
     done: bool,
 }
 
+fn finder_for(delim: &[u8]) -> memmem::Finder<'static> {
+    let mut needle = Vec::with_capacity(1 + delim.len());
+    needle.push(b'\n');
+    needle.extend_from_slice(delim);
+
+    memmem::Finder::new(&needle).into_owned()
+}
+
 impl<R: Read> Reader<R> {
     /// Frame `bytes` as `format`.
     pub fn new(bytes: R, format: Format) -> Self {
         let (delim, kind) = delim_of(format);
-
-        let mut needle = Vec::with_capacity(1 + delim.len());
-        needle.push(b'\n');
-        needle.extend_from_slice(delim);
 
         let mut buf = vec![0u8; CHUNK + delim.len()];
         buf[0] = b'\n';
@@ -2004,7 +2009,7 @@ impl<R: Read> Reader<R> {
             format,
             delim,
             kind,
-            needle,
+            finder: finder_for(delim),
             buf,
             filled: 1,
             base: 0,
@@ -2041,8 +2046,7 @@ impl<R: Read> Reader<R> {
         let format = crate::format::detect(&reader.buf[1..reader.filled])?;
         let (delim, kind) = delim_of(format);
 
-        reader.needle.truncate(1);
-        reader.needle.extend_from_slice(delim);
+        reader.finder = finder_for(delim);
         reader.format = format;
         reader.delim = delim;
         reader.kind = kind;
@@ -2187,7 +2191,7 @@ impl<R: Read> Reader<R> {
             // as the cursor
             let from = self.cursor - back;
 
-            if let Some(j) = memmem::find(&self.buf[from..self.filled], &self.needle) {
+            if let Some(j) = self.finder.find(&self.buf[from..self.filled]) {
                 return Ok(Some(from + j + 1));
             }
 
@@ -2215,12 +2219,17 @@ impl<R: Read> Reader<R> {
         }
 
         // everything before the byte the cursor anchors on is
-        // spent, except the current record, which stays
-        // readable until the next one replaces it. the buffer
-        // can then hold two records rather than one
-        let keep = match self.position {
-            Some(_) => self.start,
-            None => self.cursor,
+        // spent. a terminating format also keeps the current
+        // record, since its advance can refill and then
+        // return false, which leaves that record current. an
+        // initiating format's advance returns true at the end
+        // of the stream, so after a refill it never returns
+        // false, and its buffer holds one record rather than two
+        let keep_current = self.position.is_some() && matches!(self.kind, Delimiter::Terminating);
+        let keep = if keep_current {
+            self.start
+        } else {
+            self.cursor
         };
         let spent = keep - 1;
 
@@ -2230,8 +2239,13 @@ impl<R: Read> Reader<R> {
             self.base += spent as u64;
             self.cursor -= spent;
 
-            if self.position.is_some() {
+            // an advance that fails after this point leaves
+            // an empty record current, not moved bytes
+            if keep_current {
                 self.start -= spent;
+            } else {
+                self.start = self.cursor;
+                self.len = 0;
             }
         } else if self.filled == self.buf.len() {
             // the record is longer than the buffer, so
@@ -2688,6 +2702,28 @@ mod reader_tests {
         assert!(!reader.advance().unwrap());
         assert_eq!(reader.record(), last);
         assert_eq!(reader.position(), Some(0));
+    }
+
+    #[test]
+    fn a_fasta_read_that_fails_mid_record_leaves_an_empty_record_current() {
+        // a reader of fasta drops the current record when it
+        // refills, so after a failed read the record it held
+        // is gone rather than pointing at moved bytes
+        let failing = std::io::Read::chain(&b">a\nACGT\n>b\nAC"[..], FailingRead);
+        let mut reader = Reader::with_chunk(failing, Format::Fasta, 4);
+
+        assert!(reader.advance().unwrap());
+        assert_eq!(reader.record(), b">a\nACGT\n");
+        assert!(reader.advance().is_err());
+        assert_eq!(reader.record(), b"");
+    }
+
+    struct FailingRead;
+
+    impl Read for FailingRead {
+        fn read(&mut self, _: &mut [u8]) -> std::io::Result<usize> {
+            Err(std::io::Error::other("the disk went away"))
+        }
     }
 
     #[test]
