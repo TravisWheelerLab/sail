@@ -241,7 +241,7 @@ impl Parse for StockholmParser {
         let mut rec = StockholmRecord::default();
         let mut seen_header = false;
 
-        for line in bytes.split(|&b| b == b'\n') {
+        for line in lines(bytes) {
             // trimming the end drops a trailing \r, so a CRLF
             // file parses. the writer emits \n only
             let line = line.trim_ascii_end();
@@ -313,7 +313,7 @@ impl Parse for StockholmParser {
 /// The `#=GF ID` value in the bytes of one framed alignment, read without
 /// parsing it. `None` where the alignment carries none.
 pub fn name_of(record: &[u8]) -> Option<&[u8]> {
-    for line in record.split(|&b| b == b'\n') {
+    for line in lines(record) {
         let Some((tag, rest)) = split_first_bytes(line) else {
             continue;
         };
@@ -333,6 +333,20 @@ pub fn name_of(record: &[u8]) -> Option<&[u8]> {
     }
 
     None
+}
+
+/// The lines of `bytes`, split at each `\n` as `slice::split` splits them.
+fn lines(bytes: &[u8]) -> impl Iterator<Item = &[u8]> {
+    let mut start = 0;
+
+    memchr::memchr_iter(b'\n', bytes)
+        .chain([bytes.len()])
+        .map(move |end| {
+            let line = &bytes[start..end];
+            start = end + 1;
+
+            line
+        })
 }
 
 /// The first whitespace-separated token and the rest of the line, trimmed.
@@ -606,6 +620,23 @@ mod tests {
                 "the alignment at byte {}",
                 o.start
             );
+        }
+    }
+
+    #[test]
+    fn lines_splits_exactly_where_slice_split_does() {
+        for bytes in [
+            &b""[..],
+            b"\n",
+            b"\n\n",
+            b"a",
+            b"a\n",
+            b"a\nb",
+            b"\na\n\nb\n",
+            b"a\r\nb\r\n",
+        ] {
+            let want: Vec<&[u8]> = bytes.split(|&b| b == b'\n').collect();
+            assert_eq!(lines(bytes).collect::<Vec<_>>(), want, "{bytes:?}");
         }
     }
 

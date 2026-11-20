@@ -25,6 +25,9 @@ cargo's reading of it below 1.0: the **minor** is the breaking axis, so 0.2 to
   to test every byte for whitespace. Rewrapping 1 GiB of DNA at 60 columns
   takes 0.28 s, down from 0.34 s. With each record on one line it takes 0.17 s,
   down from 0.36 s.
+- `StockholmParser::parse` and `seq::stockholm::name_of` split an alignment into
+  lines with `memchr`. Parsing 20,000 alignments in 295 MB takes 0.25 s, down
+  from 0.33 s.
 
 ## [0.4.2] - 2026-10-14
 
