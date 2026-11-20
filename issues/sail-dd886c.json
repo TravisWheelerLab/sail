@@ -17,11 +17,20 @@
   "lease_expires": null,
   "defer_until": null,
   "created_at": "2026-11-20T00:31:29.402151214Z",
-  "updated_at": "2026-11-20T00:31:29.402151214Z",
+  "updated_at": "2026-11-20T03:19:55.631043136Z",
   "closed_at": null,
   "close_reason": null,
   "resolution": null,
-  "notes": [],
+  "notes": [
+    {
+      "id": "202f55df",
+      "at": "2026-11-20T03:19:55.631042476Z",
+      "author": "Jack Roddy/0eeac819",
+      "text": "Lessons from sail-ce02ff for choosing each reference:\n\n- Compare a path with a reference that does the same work. needletail's `seq()` borrows a one-line record, so the fair reference for `FastaParser::parse`, which returns an owned record, is needletail with `rec.seq().into_owned()`. Plain needletail looked 1.9x faster on one-line DNA. Owned needletail was 1.15x faster.\n- Time `Reader` alone beside the full path. It placed the cost in `parse`, not framing, which the first guesses got wrong.\n- Use long one-line records, long wrapped records and many short records. Each one exposed a different cost.\n- The harness at `tmp-claude/2026-11-19-fasta-gap/repro` builds against `libsail` by path and is a starting point. It is not committed.",
+      "commit": "ff7969a",
+      "branch": "dev"
+    }
+  ],
   "stamps": {
     "created": {
       "commit": "ff7969a",
