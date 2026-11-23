@@ -9,6 +9,11 @@ cargo's reading of it below 1.0: the **minor** is the breaking axis, so 0.2 to
 
 ## [Unreleased]
 
+## [0.4.4] - 2026-11-23
+
+`Framed::open` builds an index from a cold file about twice as fast on storage
+that is slow with small reads. The API is unchanged.
+
 ### Changed
 
 - `build_index`, and with it `Framed::open`, reads 1 MiB at a time. It used to
@@ -244,7 +249,8 @@ read one record at a time.
 First release: FASTA, Stockholm, HMMER3 p7hmm and the BLAST, HMMER and nail hit
 tables, with the `collection`, `parse` and `source` layers behind them.
 
-[Unreleased]: https://github.com/TravisWheelerLab/sail/compare/libsail-v0.4.3...HEAD
+[Unreleased]: https://github.com/TravisWheelerLab/sail/compare/libsail-v0.4.4...HEAD
+[0.4.4]: https://github.com/TravisWheelerLab/sail/compare/libsail-v0.4.3...libsail-v0.4.4
 [0.4.3]: https://github.com/TravisWheelerLab/sail/compare/libsail-v0.4.2...libsail-v0.4.3
 [0.4.2]: https://github.com/TravisWheelerLab/sail/compare/libsail-v0.4.1...libsail-v0.4.2
 [0.4.1]: https://github.com/TravisWheelerLab/sail/compare/libsail-v0.4.0...libsail-v0.4.1
